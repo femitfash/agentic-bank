@@ -5,7 +5,7 @@ const PUBLIC_ROUTES = ["/login", "/signup"];
 
 const PASSTHROUGH_PREFIXES = ["/api/", "/_next/", "/favicon.ico"];
 
-export async function proxy(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Skip middleware for API routes, Next.js internals, and static assets
