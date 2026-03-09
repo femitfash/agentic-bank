@@ -47,6 +47,7 @@ export default function CustomersPage() {
                 <th className="text-left px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Email</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Phone</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-500 dark:text-gray-400">KYC Status</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Notes</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Created</th>
               </tr>
             </thead>
@@ -66,6 +67,8 @@ export default function CustomersPage() {
                       {c.kyc_status}
                     </span>
                   </td>
+                  {/* VULN: Stored XSS — rendering user-supplied HTML without sanitization */}
+                  <td className="px-4 py-3 text-gray-500 dark:text-gray-400" dangerouslySetInnerHTML={{ __html: c.notes || "-" }} />
                   <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{new Date(c.created_at).toLocaleDateString()}</td>
                 </tr>
               ))}

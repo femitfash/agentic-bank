@@ -5,12 +5,31 @@ import { logAudit } from "@/shared/lib/audit";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-export async function GET(_request: NextRequest, { params }: RouteContext) {
+export async function GET(request: NextRequest, { params }: RouteContext) {
   const { id } = await params;
   const user = await authenticateRequest();
   if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const admin = createAdminClient();
+
+  // VULN: IDOR — "direct" mode skips organization scoping, any user can access any customer
+  const direct = request.nextUrl.searchParams.get("direct");
+  if (direct === "true") {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: customer, error } = await (admin as any)
+      .from("customers")
+      .select("*")
+      .eq("id", id)
+      .single();
+    if (error || !customer) return Response.json({ error: "Customer not found" }, { status: 404 });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: accounts } = await (admin as any)
+      .from("accounts")
+      .select("*")
+      .eq("customer_id", id);
+    return Response.json({ customer, accounts: accounts || [] });
+  }
+
   const organizationId = await getOrganizationId(admin, user);
   if (!organizationId) return Response.json({ error: "No organization found" }, { status: 404 });
 
