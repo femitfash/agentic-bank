@@ -20,15 +20,40 @@ export async function GET(request: NextRequest) {
   const type = searchParams.get("type");
   const date_from = searchParams.get("date_from");
   const date_to = searchParams.get("date_to");
+  const txn_ids_raw = searchParams.get("txn_ids");
   const limit = Math.min(Number(searchParams.get("limit")) || 50, 200);
+  const offset = Number(searchParams.get("offset")) || 0;
 
+  // Parse transaction ID filter
+  const txnIds = txn_ids_raw
+    ? txn_ids_raw.split(",").map(s => s.trim()).filter(Boolean)
+    : null;
+
+  // Count query (same filters, no limit/offset)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let countQ = (admin as any)
+    .from("transactions")
+    .select("id", { count: "exact", head: true })
+    .eq("organization_id", organizationId);
+
+  if (txnIds && txnIds.length > 0) countQ = countQ.in("transaction_id", txnIds);
+  if (account_id) countQ = countQ.eq("account_id", account_id);
+  if (type) countQ = countQ.eq("type", type);
+  if (date_from) countQ = countQ.gte("created_at", date_from);
+  if (date_to) countQ = countQ.lte("created_at", date_to);
+
+  const { count: total } = await countQ;
+
+  // Data query with pagination
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let q = (admin as any)
     .from("transactions")
-    .select("*, accounts(account_number, account_type)")
+    .select("*, accounts!account_id(account_number, account_type)")
     .eq("organization_id", organizationId)
     .order("created_at", { ascending: false })
-    .limit(limit);
+    .range(offset, offset + limit - 1);
+
+  if (txnIds && txnIds.length > 0) q = q.in("transaction_id", txnIds);
 
   if (account_id) q = q.eq("account_id", account_id);
   if (type) q = q.eq("type", type);
@@ -36,9 +61,9 @@ export async function GET(request: NextRequest) {
   if (date_to) q = q.lte("created_at", date_to);
 
   const { data, error } = await q;
-  if (error) return Response.json({ transactions: [], error: error.message });
+  if (error) return Response.json({ transactions: [], total: 0, error: error.message });
 
-  return Response.json({ transactions: data || [] });
+  return Response.json({ transactions: data || [], total: total ?? (data || []).length });
 }
 
 export async function POST(request: NextRequest) {

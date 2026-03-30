@@ -11,6 +11,8 @@ const NAV_ITEMS = [
   { href: "/customers", label: "Customers" },
   { href: "/accounts", label: "Accounts" },
   { href: "/transactions", label: "Transactions" },
+  { href: "/fraud-validation", label: "Fraud Validation" },
+  { href: "/settings", label: "Settings" },
 ];
 
 export default function DashboardLayout({
@@ -72,17 +74,6 @@ export default function DashboardLayout({
             }`}
           >
             Documentation
-          </Link>
-          <Link
-            href="/settings"
-            suppressHydrationWarning
-            className={`block px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-              pathname === "/settings"
-                ? "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
-                : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-            }`}
-          >
-            Settings
           </Link>
           <LogoutButton />
           <button

@@ -51,15 +51,7 @@ export async function POST(request: NextRequest) {
     const writeCount: number = orgSettings.copilot_write_count || 0;
     const hasCustomKey = Boolean(orgSettings.anthropic_api_key);
 
-    if (writeCount >= FREE_LIMIT && !hasCustomKey) {
-      return Response.json({
-        error: "free_limit_reached",
-        upgrade_prompt: true,
-        message: `You've used all ${FREE_LIMIT} free AI actions. Add your own API key in Settings to continue.`,
-        write_count: writeCount,
-        limit: FREE_LIMIT,
-      }, { status: 402 });
-    }
+    // Free tier limit removed for development
 
     // 5. Execute the approved action (scoped appropriately)
     const result = isCustomerScope

@@ -16,7 +16,7 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: transaction, error } = await (admin as any)
     .from("transactions")
-    .select("*, accounts(account_number, account_type, customers(first_name, last_name))")
+    .select("*, accounts!account_id(account_number, account_type, customers(first_name, last_name))")
     .eq("organization_id", organizationId)
     .eq("id", id)
     .single();
