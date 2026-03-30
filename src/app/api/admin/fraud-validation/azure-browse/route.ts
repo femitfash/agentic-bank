@@ -1,7 +1,34 @@
 import { NextRequest } from "next/server";
 import { ShareServiceClient } from "@azure/storage-file-share";
+import { DefaultAzureCredential } from "@azure/identity";
 import { createAdminClient } from "@/shared/lib/supabase/admin";
 import { authenticateRequest, getOrganizationId } from "@/shared/lib/auth";
+
+function getShareClient(request: NextRequest) {
+  const authMethod = request.nextUrl.searchParams.get("auth") || "connection_string";
+  const shareName = request.nextUrl.searchParams.get("share")
+    || process.env.AZURE_FILE_SHARE_NAME;
+  const connStr = request.nextUrl.searchParams.get("conn")
+    || process.env.AZURE_STORAGE_CONNECTION_STRING;
+
+  if (!shareName) return { error: "File share name is required" };
+
+  if (authMethod === "entra") {
+    const accountName = request.nextUrl.searchParams.get("account")
+      || process.env.AZURE_STORAGE_ACCOUNT_NAME;
+    if (!accountName) return { error: "Storage account name is required for Entra SSO" };
+    const credential = new DefaultAzureCredential();
+    const serviceClient = new ShareServiceClient(
+      `https://${accountName}.file.core.windows.net`,
+      credential
+    );
+    return { client: serviceClient.getShareClient(shareName) };
+  }
+
+  if (!connStr) return { error: "Connection string is required" };
+  const serviceClient = ShareServiceClient.fromConnectionString(connStr);
+  return { client: serviceClient.getShareClient(shareName) };
+}
 
 export async function GET(request: NextRequest) {
   const user = await authenticateRequest();
@@ -10,24 +37,18 @@ export async function GET(request: NextRequest) {
   const orgId = await getOrganizationId(admin, user);
   if (!orgId) return Response.json({ error: "No organization" }, { status: 400 });
 
-  const connStr = process.env.AZURE_STORAGE_CONNECTION_STRING;
-  const shareName = process.env.AZURE_FILE_SHARE_NAME;
-  if (!connStr || !shareName) {
-    return Response.json(
-      { error: "Azure Storage not configured. Set AZURE_STORAGE_CONNECTION_STRING and AZURE_FILE_SHARE_NAME." },
-      { status: 501 }
-    );
+  const result = getShareClient(request);
+  if ("error" in result) {
+    return Response.json({ error: result.error }, { status: 400 });
   }
 
   const path = request.nextUrl.searchParams.get("path") || "";
   const cleanPath = path.replace(/^\/+/, "");
 
   try {
-    const serviceClient = ShareServiceClient.fromConnectionString(connStr);
-    const shareClient = serviceClient.getShareClient(shareName);
     const dirClient = cleanPath
-      ? shareClient.getDirectoryClient(cleanPath)
-      : shareClient.rootDirectoryClient;
+      ? result.client.getDirectoryClient(cleanPath)
+      : result.client.rootDirectoryClient;
 
     const entries: { name: string; kind: "directory" | "file"; size?: number }[] = [];
 

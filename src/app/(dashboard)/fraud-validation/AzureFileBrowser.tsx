@@ -8,6 +8,45 @@ interface Entry {
   size?: number;
 }
 
+interface AzureConfig {
+  authMethod: "connection_string" | "entra";
+  connectionString: string;
+  shareName: string;
+  accountName: string;
+}
+
+const LS_KEY = "azure_storage_config";
+
+function loadConfig(): AzureConfig | null {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function saveConfig(config: AzureConfig) {
+  localStorage.setItem(LS_KEY, JSON.stringify(config));
+}
+
+function clearConfig() {
+  localStorage.removeItem(LS_KEY);
+}
+
+function buildParams(config: AzureConfig, extra?: Record<string, string>) {
+  const params = new URLSearchParams();
+  params.set("auth", config.authMethod);
+  params.set("share", config.shareName);
+  if (config.authMethod === "entra") {
+    params.set("account", config.accountName);
+  } else {
+    params.set("conn", config.connectionString);
+  }
+  if (extra) {
+    for (const [k, v] of Object.entries(extra)) params.set(k, v);
+  }
+  return params.toString();
+}
+
 interface AzureFileBrowserProps {
   open: boolean;
   onClose: () => void;
@@ -15,17 +54,40 @@ interface AzureFileBrowserProps {
 }
 
 export default function AzureFileBrowser({ open, onClose, onFileSelected }: AzureFileBrowserProps) {
+  const [config, setConfig] = useState<AzureConfig | null>(null);
+  const [showSetup, setShowSetup] = useState(false);
+
+  // Setup form state
+  const [formAuth, setFormAuth] = useState<"connection_string" | "entra">("connection_string");
+  const [formConnStr, setFormConnStr] = useState("");
+  const [formShare, setFormShare] = useState("");
+  const [formAccount, setFormAccount] = useState("");
+
+  // Browser state
   const [currentPath, setCurrentPath] = useState("");
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState<string | null>(null);
   const [error, setError] = useState("");
 
-  const browse = useCallback(async (path: string) => {
+  useEffect(() => {
+    if (open) {
+      const saved = loadConfig();
+      if (saved) {
+        setConfig(saved);
+        setShowSetup(false);
+      } else {
+        setShowSetup(true);
+      }
+    }
+  }, [open]);
+
+  const browse = useCallback(async (path: string, cfg: AzureConfig) => {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`/api/admin/fraud-validation/azure-browse?path=${encodeURIComponent(path)}`);
+      const qs = buildParams(cfg, { path });
+      const res = await fetch(`/api/admin/fraud-validation/azure-browse?${qs}`);
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Failed to browse");
@@ -41,15 +103,57 @@ export default function AzureFileBrowser({ open, onClose, onFileSelected }: Azur
   }, []);
 
   useEffect(() => {
-    if (open) browse("");
-  }, [open, browse]);
+    if (open && config && !showSetup) {
+      browse("", config);
+    }
+  }, [open, config, showSetup, browse]);
+
+  function handleSaveConfig() {
+    if (!formShare.trim()) return;
+    if (formAuth === "connection_string" && !formConnStr.trim()) return;
+    if (formAuth === "entra" && !formAccount.trim()) return;
+
+    const cfg: AzureConfig = {
+      authMethod: formAuth,
+      connectionString: formConnStr.trim(),
+      shareName: formShare.trim(),
+      accountName: formAccount.trim(),
+    };
+    saveConfig(cfg);
+    setConfig(cfg);
+    setShowSetup(false);
+  }
+
+  function handleEditConfig() {
+    if (config) {
+      setFormAuth(config.authMethod);
+      setFormConnStr(config.connectionString);
+      setFormShare(config.shareName);
+      setFormAccount(config.accountName);
+    }
+    setShowSetup(true);
+  }
+
+  function handleDisconnect() {
+    clearConfig();
+    setConfig(null);
+    setEntries([]);
+    setCurrentPath("");
+    setShowSetup(true);
+    setFormAuth("connection_string");
+    setFormConnStr("");
+    setFormShare("");
+    setFormAccount("");
+  }
 
   async function handleFileClick(name: string) {
+    if (!config) return;
     const filePath = currentPath === "/" ? name : `${currentPath.replace(/^\//, "")}/${name}`;
     setFetching(name);
     setError("");
     try {
-      const res = await fetch(`/api/admin/fraud-validation/azure-fetch?path=${encodeURIComponent(filePath)}`);
+      const qs = buildParams(config, { path: filePath });
+      const res = await fetch(`/api/admin/fraud-validation/azure-fetch?${qs}`);
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Failed to fetch file");
@@ -64,7 +168,7 @@ export default function AzureFileBrowser({ open, onClose, onFileSelected }: Azur
   }
 
   function navigateTo(path: string) {
-    browse(path);
+    if (config) browse(path, config);
   }
 
   const breadcrumbs = currentPath.split("/").filter(Boolean);
@@ -76,66 +180,187 @@ export default function AzureFileBrowser({ open, onClose, onFileSelected }: Azur
       <div className="w-full max-w-lg bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 shadow-xl">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
           <span className="text-sm font-medium text-blue-700 dark:text-blue-400">Azure Storage File Share</span>
-          <button
-            onClick={onClose}
-            className="px-2 py-1 text-xs rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer transition-colors"
-          >
-            Close
-          </button>
-        </div>
-
-        {/* Breadcrumbs */}
-        <div className="px-4 py-2 flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-800">
-          <button onClick={() => navigateTo("")} className="hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer">
-            /
-          </button>
-          {breadcrumbs.map((seg, i) => {
-            const path = breadcrumbs.slice(0, i + 1).join("/");
-            return (
-              <span key={path} className="flex items-center gap-1">
-                <span>/</span>
-                <button onClick={() => navigateTo(path)} className="hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer">
-                  {seg}
-                </button>
-              </span>
-            );
-          })}
-        </div>
-
-        {/* Content */}
-        <div className="p-4 max-h-80 overflow-y-auto">
-          {error && (
-            <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-sm mb-3">
-              {error}
-            </div>
-          )}
-
-          {loading ? (
-            <div className="text-sm text-gray-400 py-6 text-center">Loading...</div>
-          ) : entries.length === 0 ? (
-            <div className="text-sm text-gray-400 py-6 text-center">No CSV or JSON files found in this directory.</div>
-          ) : (
-            <div className="space-y-1">
-              {entries.map((e) => (
+          <div className="flex items-center gap-2">
+            {config && !showSetup && (
+              <>
                 <button
-                  key={e.name}
-                  onClick={() => e.kind === "directory" ? navigateTo(
-                    (currentPath === "/" ? "" : currentPath.replace(/^\//, "")) + (currentPath === "/" ? "" : "/") + e.name
-                  ) : handleFileClick(e.name)}
-                  disabled={fetching !== null}
-                  className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer disabled:opacity-50"
+                  onClick={handleEditConfig}
+                  className="px-2 py-1 text-xs rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer transition-colors"
                 >
-                  <span className="text-base">{e.kind === "directory" ? "📁" : "📄"}</span>
-                  <span className="flex-1 text-gray-800 dark:text-gray-200 truncate">{e.name}</span>
-                  {e.kind === "file" && e.size != null && (
-                    <span className="text-xs text-gray-400">{(e.size / 1024).toFixed(1)} KB</span>
-                  )}
-                  {fetching === e.name && <span className="text-xs text-blue-500">Loading...</span>}
+                  Settings
                 </button>
-              ))}
-            </div>
-          )}
+                <button
+                  onClick={handleDisconnect}
+                  className="px-2 py-1 text-xs rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 cursor-pointer transition-colors"
+                >
+                  Disconnect
+                </button>
+              </>
+            )}
+            <button
+              onClick={onClose}
+              className="px-2 py-1 text-xs rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer transition-colors"
+            >
+              Close
+            </button>
+          </div>
         </div>
+
+        {showSetup ? (
+          /* Connection Setup Form */
+          <div className="p-4 space-y-4">
+            <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Connect to Azure Storage</div>
+
+            {/* Auth Method */}
+            <div>
+              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Authentication Method</label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setFormAuth("connection_string")}
+                  className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium border transition-colors cursor-pointer ${
+                    formAuth === "connection_string"
+                      ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400"
+                      : "border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
+                  }`}
+                >
+                  Connection String
+                </button>
+                <button
+                  onClick={() => setFormAuth("entra")}
+                  className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium border transition-colors cursor-pointer ${
+                    formAuth === "entra"
+                      ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400"
+                      : "border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
+                  }`}
+                >
+                  Azure Entra SSO
+                </button>
+              </div>
+            </div>
+
+            {formAuth === "connection_string" ? (
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Connection String</label>
+                  <input
+                    type="password"
+                    value={formConnStr}
+                    onChange={(e) => setFormConnStr(e.target.value)}
+                    placeholder="DefaultEndpointsProtocol=https;AccountName=...;AccountKey=..."
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400"
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Storage Account Name</label>
+                  <input
+                    type="text"
+                    value={formAccount}
+                    onChange={(e) => setFormAccount(e.target.value)}
+                    placeholder="e.g. mystorageaccount"
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400"
+                  />
+                </div>
+                <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 text-xs">
+                  Entra SSO uses your server&apos;s Azure credentials (Managed Identity, Azure CLI, or environment variables). Ensure the app has <strong>Storage File Data Privileged Reader</strong> role on the storage account.
+                </div>
+              </>
+            )}
+
+            <div>
+              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">File Share Name</label>
+              <input
+                type="text"
+                value={formShare}
+                onChange={(e) => setFormShare(e.target.value)}
+                placeholder="e.g. fraud-data"
+                className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-1">
+              {config && (
+                <button
+                  onClick={() => setShowSetup(false)}
+                  className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer transition-colors"
+                >
+                  Cancel
+                </button>
+              )}
+              <button
+                onClick={handleSaveConfig}
+                disabled={
+                  !formShare.trim()
+                  || (formAuth === "connection_string" && !formConnStr.trim())
+                  || (formAuth === "entra" && !formAccount.trim())
+                }
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 disabled:text-gray-500 disabled:cursor-not-allowed cursor-pointer transition-colors"
+              >
+                Connect
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Breadcrumbs */}
+            <div className="px-4 py-2 flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-800">
+              <button onClick={() => navigateTo("")} className="hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer">
+                /
+              </button>
+              {breadcrumbs.map((seg, i) => {
+                const path = breadcrumbs.slice(0, i + 1).join("/");
+                return (
+                  <span key={path} className="flex items-center gap-1">
+                    <span>/</span>
+                    <button onClick={() => navigateTo(path)} className="hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer">
+                      {seg}
+                    </button>
+                  </span>
+                );
+              })}
+              <span className="ml-auto text-xs text-gray-400">
+                {config?.authMethod === "entra" ? "Entra SSO" : "Connection String"} — {config?.shareName}
+              </span>
+            </div>
+
+            {/* Content */}
+            <div className="p-4 max-h-80 overflow-y-auto">
+              {error && (
+                <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-sm mb-3">
+                  {error}
+                </div>
+              )}
+
+              {loading ? (
+                <div className="text-sm text-gray-400 py-6 text-center">Loading...</div>
+              ) : entries.length === 0 ? (
+                <div className="text-sm text-gray-400 py-6 text-center">No CSV or JSON files found in this directory.</div>
+              ) : (
+                <div className="space-y-1">
+                  {entries.map((e) => (
+                    <button
+                      key={e.name}
+                      onClick={() => e.kind === "directory" ? navigateTo(
+                        (currentPath === "/" ? "" : currentPath.replace(/^\//, "")) + (currentPath === "/" ? "" : "/") + e.name
+                      ) : handleFileClick(e.name)}
+                      disabled={fetching !== null}
+                      className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      <span className="text-base">{e.kind === "directory" ? "\uD83D\uDCC1" : "\uD83D\uDCC4"}</span>
+                      <span className="flex-1 text-gray-800 dark:text-gray-200 truncate">{e.name}</span>
+                      {e.kind === "file" && e.size != null && (
+                        <span className="text-xs text-gray-400">{(e.size / 1024).toFixed(1)} KB</span>
+                      )}
+                      {fetching === e.name && <span className="text-xs text-blue-500">Loading...</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
