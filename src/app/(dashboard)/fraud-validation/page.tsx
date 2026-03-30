@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import AzureFileBrowser from "./AzureFileBrowser";
+import ColumnMapper from "./ColumnMapper";
 
 interface ValidationRow {
   transaction_id: string;
@@ -160,10 +162,15 @@ export default function FraudValidationPage() {
 
   // Upload
   const [showUpload, setShowUpload] = useState(false);
-  const [uploadLoading, setUploadLoading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState("");
   const [uploadError, setUploadError] = useState("");
   const [uploadAccountId, setUploadAccountId] = useState("");
+
+  // Azure / Column Mapper
+  const [showAzureBrowser, setShowAzureBrowser] = useState(false);
+  const [showColumnMapper, setShowColumnMapper] = useState(false);
+  const [pendingFileContent, setPendingFileContent] = useState("");
+  const [pendingFileName, setPendingFileName] = useState("");
 
   // Actions dropdown
   const [showActionsMenu, setShowActionsMenu] = useState(false);
@@ -358,38 +365,21 @@ withdrawal,45.99,Online Purchase - Streaming Service,2026-02-18T20:45:00Z,comple
   }
 
   async function handleFileUpload(file: File) {
-    setUploadLoading(true);
     setUploadMessage("");
     setUploadError("");
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      if (uploadAccountId) formData.append("account_id", uploadAccountId);
+    const text = await file.text();
+    setPendingFileName(file.name);
+    setPendingFileContent(text);
+    setShowColumnMapper(true);
+  }
 
-      const res = await fetch("/api/admin/fraud-validation/upload", {
-        method: "POST",
-        body: formData,
-      });
-      const data = await res.json();
-
-      if (!res.ok || !data.success) {
-        setUploadError(data.error || "Upload failed");
-        if (data.validation_errors?.length) {
-          setUploadError(prev => prev + "\n" + data.validation_errors.join("\n"));
-        }
-        return;
-      }
-
-      setUploadMessage(`${data.inserted} transactions uploaded${data.skipped ? ` (${data.skipped} skipped)` : ""}`);
-      if (data.validation_errors?.length) {
-        setUploadMessage(prev => prev + ` — ${data.validation_errors.length} warnings`);
-      }
-      fetchData();
-    } catch {
-      setUploadError("Upload request failed");
-    } finally {
-      setUploadLoading(false);
-    }
+  function handleAzureFileSelected(filename: string, content: string) {
+    setUploadMessage("");
+    setUploadError("");
+    setPendingFileName(filename);
+    setPendingFileContent(content);
+    setShowAzureBrowser(false);
+    setShowColumnMapper(true);
   }
 
   return (
@@ -661,17 +651,12 @@ withdrawal,45.99,Online Purchase - Streaming Service,2026-02-18T20:45:00Z,comple
                   ))}
                 </select>
               </div>
-              <label className={`px-4 py-2 rounded-lg text-sm font-medium cursor-pointer transition-colors ${
-                uploadLoading
-                  ? "bg-gray-300 dark:bg-gray-600 text-gray-500 cursor-not-allowed"
-                  : "bg-emerald-600 text-white hover:bg-emerald-700"
-              }`}>
-                {uploadLoading ? "Uploading..." : "Choose File"}
+              <label className="px-4 py-2 rounded-lg text-sm font-medium cursor-pointer transition-colors bg-emerald-600 text-white hover:bg-emerald-700">
+                Choose File
                 <input
                   type="file"
                   accept=".json,.csv"
                   className="hidden"
-                  disabled={uploadLoading}
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) handleFileUpload(file);
@@ -679,6 +664,12 @@ withdrawal,45.99,Online Purchase - Streaming Service,2026-02-18T20:45:00Z,comple
                   }}
                 />
               </label>
+              <button
+                onClick={() => setShowAzureBrowser(true)}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 cursor-pointer transition-colors"
+              >
+                Browse Azure Storage
+              </button>
             </div>
 
             {uploadMessage && (
@@ -830,6 +821,21 @@ withdrawal,45.99,Online Purchase - Streaming Service,2026-02-18T20:45:00Z,comple
           </div>
         </div>
       )}
+
+      <AzureFileBrowser
+        open={showAzureBrowser}
+        onClose={() => setShowAzureBrowser(false)}
+        onFileSelected={handleAzureFileSelected}
+      />
+      <ColumnMapper
+        open={showColumnMapper}
+        filename={pendingFileName}
+        rawContent={pendingFileContent}
+        accountId={uploadAccountId}
+        onClose={() => setShowColumnMapper(false)}
+        onUploadComplete={(msg) => { setUploadMessage(msg); fetchData(); }}
+        onError={(err) => setUploadError(err)}
+      />
     </div>
   );
 }
