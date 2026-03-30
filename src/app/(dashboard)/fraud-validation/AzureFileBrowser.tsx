@@ -179,7 +179,7 @@ export default function AzureFileBrowser({ open, onClose, onFileSelected }: Azur
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="w-full max-w-lg bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 shadow-xl">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-          <span className="text-sm font-medium text-blue-700 dark:text-blue-400">Azure Storage File Share</span>
+          <span className="text-sm font-medium text-blue-700 dark:text-blue-400">Azure File Storage</span>
           <div className="flex items-center gap-2">
             {config && !showSetup && (
               <>
@@ -288,7 +288,7 @@ export default function AzureFileBrowser({ open, onClose, onFileSelected }: Azur
             )}
 
             <div>
-              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">File Share Name</label>
+              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">File Storage Name</label>
               <input
                 type="text"
                 value={formShare}
@@ -296,7 +296,7 @@ export default function AzureFileBrowser({ open, onClose, onFileSelected }: Azur
                 placeholder="e.g. fraud-data"
                 className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400"
               />
-              <p className="text-[11px] text-gray-400 mt-1">Find this in Azure Portal &rarr; Storage Account &rarr; <strong>File shares</strong> in the left menu under Data storage.</p>
+              <p className="text-[11px] text-gray-400 mt-1">Find this in Azure Portal &rarr; Storage Account &rarr; <strong>File storage</strong> in the left menu under Data storage.</p>
             </div>
 
             <div className="flex justify-end gap-2 pt-1">

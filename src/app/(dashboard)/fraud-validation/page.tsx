@@ -668,7 +668,7 @@ withdrawal,45.99,Online Purchase - Streaming Service,2026-02-18T20:45:00Z,comple
                 onClick={() => setShowAzureBrowser(true)}
                 className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 cursor-pointer transition-colors"
               >
-                Browse Azure Storage
+                Browse Azure File Storage
               </button>
             </div>
 
