@@ -6,6 +6,7 @@ interface Entry {
   name: string;
   kind: "directory" | "file";
   size?: number;
+  supported?: boolean;
 }
 
 interface AzureConfig {
@@ -362,26 +363,45 @@ export default function AzureFileBrowser({ open, onClose, onFileSelected }: Azur
               {loading ? (
                 <div className="text-sm text-gray-400 py-6 text-center">Loading...</div>
               ) : entries.length === 0 ? (
-                <div className="text-sm text-gray-400 py-6 text-center">No CSV or JSON files found in this directory.</div>
+                <div className="text-sm text-gray-400 py-6 text-center">
+                  <p>No files found in this container.</p>
+                  <p className="mt-1 text-xs">Verify the container name matches exactly (case-sensitive) and that blobs exist in this container.</p>
+                </div>
               ) : (
                 <div className="space-y-1">
-                  {entries.map((e) => (
-                    <button
-                      key={e.name}
-                      onClick={() => e.kind === "directory" ? navigateTo(
-                        (currentPath === "/" ? "" : currentPath.replace(/^\//, "")) + (currentPath === "/" ? "" : "/") + e.name
-                      ) : handleFileClick(e.name)}
-                      disabled={fetching !== null}
-                      className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer disabled:opacity-50"
-                    >
-                      <span className="text-base">{e.kind === "directory" ? "\uD83D\uDCC1" : "\uD83D\uDCC4"}</span>
-                      <span className="flex-1 text-gray-800 dark:text-gray-200 truncate">{e.name}</span>
-                      {e.kind === "file" && e.size != null && (
-                        <span className="text-xs text-gray-400">{(e.size / 1024).toFixed(1)} KB</span>
-                      )}
-                      {fetching === e.name && <span className="text-xs text-blue-500">Loading...</span>}
-                    </button>
-                  ))}
+                  {entries.map((e) => {
+                    const isSupported = e.kind === "directory" || e.supported !== false;
+                    return (
+                      <button
+                        key={e.name}
+                        onClick={() => {
+                          if (e.kind === "directory") {
+                            navigateTo(
+                              (currentPath === "/" ? "" : currentPath.replace(/^\//, "")) + (currentPath === "/" ? "" : "/") + e.name
+                            );
+                          } else if (isSupported) {
+                            handleFileClick(e.name);
+                          }
+                        }}
+                        disabled={fetching !== null || (e.kind === "file" && !isSupported)}
+                        className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left text-sm transition-colors ${
+                          e.kind === "file" && !isSupported
+                            ? "opacity-40 cursor-not-allowed"
+                            : "hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer disabled:opacity-50"
+                        }`}
+                      >
+                        <span className="text-base">{e.kind === "directory" ? "\uD83D\uDCC1" : "\uD83D\uDCC4"}</span>
+                        <span className={`flex-1 truncate ${isSupported ? "text-gray-800 dark:text-gray-200" : "text-gray-400 dark:text-gray-500"}`}>{e.name}</span>
+                        {e.kind === "file" && !isSupported && (
+                          <span className="text-[10px] text-gray-400">unsupported</span>
+                        )}
+                        {e.kind === "file" && e.size != null && (
+                          <span className="text-xs text-gray-400">{(e.size / 1024).toFixed(1)} KB</span>
+                        )}
+                        {fetching === e.name && <span className="text-xs text-blue-500">Loading...</span>}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>

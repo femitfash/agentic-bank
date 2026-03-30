@@ -53,22 +53,36 @@ export async function POST(request: NextRequest) {
     const containerClient = result.client.getContainerClient(container);
     const entries: { name: string; kind: "directory" | "file"; size?: number }[] = [];
 
-    for await (const item of containerClient.listBlobsByHierarchy("/", {
-      prefix: cleanPrefix ? cleanPrefix + (cleanPrefix.endsWith("/") ? "" : "/") : "",
-    })) {
+    const listPrefix = cleanPrefix ? cleanPrefix + (cleanPrefix.endsWith("/") ? "" : "/") : "";
+
+    // Try hierarchical listing first
+    for await (const item of containerClient.listBlobsByHierarchy("/", { prefix: listPrefix })) {
       if (item.kind === "prefix") {
         const dirName = item.name.replace(/\/$/, "").split("/").pop() || item.name;
         entries.push({ name: dirName, kind: "directory" });
       } else {
         const fileName = item.name.split("/").pop() || item.name;
         const ext = fileName.toLowerCase().split(".").pop();
-        if (ext === "csv" || ext === "json") {
-          entries.push({
-            name: fileName,
-            kind: "file",
-            size: item.properties?.contentLength,
-          });
-        }
+        entries.push({
+          name: fileName,
+          kind: "file",
+          size: item.properties?.contentLength,
+          supported: ext === "csv" || ext === "json",
+        } as { name: string; kind: "directory" | "file"; size?: number; supported?: boolean });
+      }
+    }
+
+    // If hierarchical listing found nothing at root, try flat listing
+    // (some containers have flat blobs without hierarchy)
+    if (entries.length === 0 && !cleanPrefix) {
+      for await (const blob of containerClient.listBlobsFlat()) {
+        const ext = blob.name.toLowerCase().split(".").pop();
+        entries.push({
+          name: blob.name,
+          kind: "file",
+          size: blob.properties?.contentLength,
+          supported: ext === "csv" || ext === "json",
+        } as { name: string; kind: "directory" | "file"; size?: number; supported?: boolean });
       }
     }
 
@@ -77,7 +91,7 @@ export async function POST(request: NextRequest) {
       return a.name.localeCompare(b.name);
     });
 
-    return Response.json({ path: "/" + cleanPrefix, entries });
+    return Response.json({ path: "/" + cleanPrefix, entries, container });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     if (msg.includes("ContainerNotFound")) {
