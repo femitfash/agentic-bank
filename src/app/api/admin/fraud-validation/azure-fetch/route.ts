@@ -1,35 +1,26 @@
 import { NextRequest } from "next/server";
-import { ShareServiceClient } from "@azure/storage-file-share";
+import { BlobServiceClient } from "@azure/storage-blob";
 import { DefaultAzureCredential } from "@azure/identity";
 import { createAdminClient } from "@/shared/lib/supabase/admin";
 import { authenticateRequest, getOrganizationId } from "@/shared/lib/auth";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 
-function getShareClient(request: NextRequest) {
+function getBlobServiceClient(request: NextRequest) {
   const authMethod = request.nextUrl.searchParams.get("auth") || "connection_string";
-  const shareName = request.nextUrl.searchParams.get("share")
-    || process.env.AZURE_FILE_SHARE_NAME;
   const connStr = request.nextUrl.searchParams.get("conn")
     || process.env.AZURE_STORAGE_CONNECTION_STRING;
-
-  if (!shareName) return { error: "File share name is required" };
 
   if (authMethod === "entra") {
     const accountName = request.nextUrl.searchParams.get("account")
       || process.env.AZURE_STORAGE_ACCOUNT_NAME;
     if (!accountName) return { error: "Storage account name is required for Entra SSO" };
     const credential = new DefaultAzureCredential();
-    const serviceClient = new ShareServiceClient(
-      `https://${accountName}.file.core.windows.net`,
-      credential
-    );
-    return { client: serviceClient.getShareClient(shareName) };
+    return { client: new BlobServiceClient(`https://${accountName}.blob.core.windows.net`, credential) };
   }
 
   if (!connStr) return { error: "Connection string is required" };
-  const serviceClient = ShareServiceClient.fromConnectionString(connStr);
-  return { client: serviceClient.getShareClient(shareName) };
+  return { client: BlobServiceClient.fromConnectionString(connStr) };
 }
 
 export async function GET(request: NextRequest) {
@@ -39,33 +30,35 @@ export async function GET(request: NextRequest) {
   const orgId = await getOrganizationId(admin, user);
   if (!orgId) return Response.json({ error: "No organization" }, { status: 400 });
 
-  const result = getShareClient(request);
+  const result = getBlobServiceClient(request);
   if ("error" in result) {
     return Response.json({ error: result.error }, { status: 400 });
   }
 
-  const filePath = request.nextUrl.searchParams.get("path");
-  if (!filePath) {
+  const container = request.nextUrl.searchParams.get("container")
+    || process.env.AZURE_STORAGE_CONTAINER_NAME;
+  if (!container) {
+    return Response.json({ error: "Container name is required" }, { status: 400 });
+  }
+
+  const blobPath = request.nextUrl.searchParams.get("path");
+  if (!blobPath) {
     return Response.json({ error: "path parameter required" }, { status: 400 });
   }
 
-  const ext = filePath.toLowerCase().split(".").pop();
+  const ext = blobPath.toLowerCase().split(".").pop();
   if (ext !== "csv" && ext !== "json") {
     return Response.json({ error: "Only .csv and .json files are supported" }, { status: 400 });
   }
 
-  const cleanPath = filePath.replace(/^\/+/, "");
-  const lastSlash = cleanPath.lastIndexOf("/");
-  const dirPath = lastSlash >= 0 ? cleanPath.substring(0, lastSlash) : "";
-  const fileName = lastSlash >= 0 ? cleanPath.substring(lastSlash + 1) : cleanPath;
+  const cleanPath = blobPath.replace(/^\/+/, "");
+  const fileName = cleanPath.split("/").pop() || cleanPath;
 
   try {
-    const dirClient = dirPath
-      ? result.client.getDirectoryClient(dirPath)
-      : result.client.rootDirectoryClient;
-    const fileClient = dirClient.getFileClient(fileName);
+    const containerClient = result.client.getContainerClient(container);
+    const blobClient = containerClient.getBlobClient(cleanPath);
 
-    const props = await fileClient.getProperties();
+    const props = await blobClient.getProperties();
     if (props.contentLength && props.contentLength > MAX_FILE_SIZE) {
       return Response.json(
         { error: `File too large (${(props.contentLength / 1024 / 1024).toFixed(1)} MB). Maximum is 5 MB.` },
@@ -73,7 +66,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const downloadResponse = await fileClient.download(0);
+    const downloadResponse = await blobClient.download(0);
     const body = downloadResponse.readableStreamBody;
     if (!body) {
       return Response.json({ error: "Could not read file" }, { status: 500 });
@@ -88,8 +81,11 @@ export async function GET(request: NextRequest) {
     return Response.json({ filename: fileName, content });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Unknown error";
-    if (msg.includes("ResourceNotFound")) {
+    if (msg.includes("BlobNotFound")) {
       return Response.json({ error: "File not found" }, { status: 404 });
+    }
+    if (msg.includes("AuthenticationFailed") || msg.includes("AuthorizationFailure")) {
+      return Response.json({ error: "Authentication failed. Check your credentials or permissions." }, { status: 403 });
     }
     return Response.json({ error: msg }, { status: 500 });
   }

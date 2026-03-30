@@ -11,7 +11,7 @@ interface Entry {
 interface AzureConfig {
   authMethod: "connection_string" | "entra";
   connectionString: string;
-  shareName: string;
+  containerName: string;
   accountName: string;
 }
 
@@ -35,7 +35,7 @@ function clearConfig() {
 function buildParams(config: AzureConfig, extra?: Record<string, string>) {
   const params = new URLSearchParams();
   params.set("auth", config.authMethod);
-  params.set("share", config.shareName);
+  params.set("container", config.containerName);
   if (config.authMethod === "entra") {
     params.set("account", config.accountName);
   } else {
@@ -60,7 +60,7 @@ export default function AzureFileBrowser({ open, onClose, onFileSelected }: Azur
   // Setup form state
   const [formAuth, setFormAuth] = useState<"connection_string" | "entra">("connection_string");
   const [formConnStr, setFormConnStr] = useState("");
-  const [formShare, setFormShare] = useState("");
+  const [formContainer, setFormContainer] = useState("");
   const [formAccount, setFormAccount] = useState("");
 
   // Browser state
@@ -109,14 +109,14 @@ export default function AzureFileBrowser({ open, onClose, onFileSelected }: Azur
   }, [open, config, showSetup, browse]);
 
   function handleSaveConfig() {
-    if (!formShare.trim()) return;
+    if (!formContainer.trim()) return;
     if (formAuth === "connection_string" && !formConnStr.trim()) return;
     if (formAuth === "entra" && !formAccount.trim()) return;
 
     const cfg: AzureConfig = {
       authMethod: formAuth,
       connectionString: formConnStr.trim(),
-      shareName: formShare.trim(),
+      containerName: formContainer.trim(),
       accountName: formAccount.trim(),
     };
     saveConfig(cfg);
@@ -128,7 +128,7 @@ export default function AzureFileBrowser({ open, onClose, onFileSelected }: Azur
     if (config) {
       setFormAuth(config.authMethod);
       setFormConnStr(config.connectionString);
-      setFormShare(config.shareName);
+      setFormContainer(config.containerName);
       setFormAccount(config.accountName);
     }
     setShowSetup(true);
@@ -142,7 +142,7 @@ export default function AzureFileBrowser({ open, onClose, onFileSelected }: Azur
     setShowSetup(true);
     setFormAuth("connection_string");
     setFormConnStr("");
-    setFormShare("");
+    setFormContainer("");
     setFormAccount("");
   }
 
@@ -271,7 +271,7 @@ export default function AzureFileBrowser({ open, onClose, onFileSelected }: Azur
                     placeholder="e.g. mystorageaccount"
                     className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400"
                   />
-                  <p className="text-[11px] text-gray-400 mt-1">The name from your storage URL: <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">https://<strong>yourname</strong>.file.core.windows.net</code></p>
+                  <p className="text-[11px] text-gray-400 mt-1">The name from your storage URL: <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">https://<strong>yourname</strong>.blob.core.windows.net</code></p>
                 </div>
                 <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 text-xs space-y-2">
                   <p className="font-medium">How Azure Entra SSO works:</p>
@@ -282,21 +282,21 @@ export default function AzureFileBrowser({ open, onClose, onFileSelected }: Azur
                     <li><strong>Environment variables</strong> &mdash; set <code className="bg-blue-100 dark:bg-blue-900/40 px-1 rounded">AZURE_TENANT_ID</code>, <code className="bg-blue-100 dark:bg-blue-900/40 px-1 rounded">AZURE_CLIENT_ID</code>, and <code className="bg-blue-100 dark:bg-blue-900/40 px-1 rounded">AZURE_CLIENT_SECRET</code> for a service principal</li>
                   </ol>
                   <p className="font-medium pt-1">Required permissions:</p>
-                  <p>The identity needs the <strong>Storage File Data Privileged Reader</strong> role assigned on the storage account. In Azure Portal: Storage Account &rarr; Access Control (IAM) &rarr; Add role assignment.</p>
+                  <p>The identity needs the <strong>Storage Blob Data Reader</strong> role assigned on the storage account. In Azure Portal: Storage Account &rarr; Access Control (IAM) &rarr; Add role assignment.</p>
                 </div>
               </>
             )}
 
             <div>
-              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">File Storage Name</label>
+              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Container Name</label>
               <input
                 type="text"
-                value={formShare}
-                onChange={(e) => setFormShare(e.target.value)}
+                value={formContainer}
+                onChange={(e) => setFormContainer(e.target.value)}
                 placeholder="e.g. fraud-data"
                 className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400"
               />
-              <p className="text-[11px] text-gray-400 mt-1">Find this in Azure Portal &rarr; Storage Account &rarr; <strong>File storage</strong> in the left menu under Data storage.</p>
+              <p className="text-[11px] text-gray-400 mt-1">Find this in Azure Portal &rarr; Storage Account &rarr; <strong>Containers</strong> in the left menu under Data storage.</p>
             </div>
 
             <div className="flex justify-end gap-2 pt-1">
@@ -311,7 +311,7 @@ export default function AzureFileBrowser({ open, onClose, onFileSelected }: Azur
               <button
                 onClick={handleSaveConfig}
                 disabled={
-                  !formShare.trim()
+                  !formContainer.trim()
                   || (formAuth === "connection_string" && !formConnStr.trim())
                   || (formAuth === "entra" && !formAccount.trim())
                 }
@@ -340,7 +340,7 @@ export default function AzureFileBrowser({ open, onClose, onFileSelected }: Azur
                 );
               })}
               <span className="ml-auto text-xs text-gray-400">
-                {config?.authMethod === "entra" ? "Entra SSO" : "Connection String"} — {config?.shareName}
+                {config?.authMethod === "entra" ? "Entra SSO" : "Connection String"} — {config?.containerName}
               </span>
             </div>
 

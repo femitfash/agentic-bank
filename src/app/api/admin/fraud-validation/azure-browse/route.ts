@@ -1,33 +1,24 @@
 import { NextRequest } from "next/server";
-import { ShareServiceClient } from "@azure/storage-file-share";
+import { BlobServiceClient } from "@azure/storage-blob";
 import { DefaultAzureCredential } from "@azure/identity";
 import { createAdminClient } from "@/shared/lib/supabase/admin";
 import { authenticateRequest, getOrganizationId } from "@/shared/lib/auth";
 
-function getShareClient(request: NextRequest) {
+function getBlobServiceClient(request: NextRequest) {
   const authMethod = request.nextUrl.searchParams.get("auth") || "connection_string";
-  const shareName = request.nextUrl.searchParams.get("share")
-    || process.env.AZURE_FILE_SHARE_NAME;
   const connStr = request.nextUrl.searchParams.get("conn")
     || process.env.AZURE_STORAGE_CONNECTION_STRING;
-
-  if (!shareName) return { error: "File share name is required" };
 
   if (authMethod === "entra") {
     const accountName = request.nextUrl.searchParams.get("account")
       || process.env.AZURE_STORAGE_ACCOUNT_NAME;
     if (!accountName) return { error: "Storage account name is required for Entra SSO" };
     const credential = new DefaultAzureCredential();
-    const serviceClient = new ShareServiceClient(
-      `https://${accountName}.file.core.windows.net`,
-      credential
-    );
-    return { client: serviceClient.getShareClient(shareName) };
+    return { client: new BlobServiceClient(`https://${accountName}.blob.core.windows.net`, credential) };
   }
 
   if (!connStr) return { error: "Connection string is required" };
-  const serviceClient = ShareServiceClient.fromConnectionString(connStr);
-  return { client: serviceClient.getShareClient(shareName) };
+  return { client: BlobServiceClient.fromConnectionString(connStr) };
 }
 
 export async function GET(request: NextRequest) {
@@ -37,29 +28,39 @@ export async function GET(request: NextRequest) {
   const orgId = await getOrganizationId(admin, user);
   if (!orgId) return Response.json({ error: "No organization" }, { status: 400 });
 
-  const result = getShareClient(request);
+  const result = getBlobServiceClient(request);
   if ("error" in result) {
     return Response.json({ error: result.error }, { status: 400 });
   }
 
-  const path = request.nextUrl.searchParams.get("path") || "";
-  const cleanPath = path.replace(/^\/+/, "");
+  const container = request.nextUrl.searchParams.get("container")
+    || process.env.AZURE_STORAGE_CONTAINER_NAME;
+  if (!container) {
+    return Response.json({ error: "Container name is required" }, { status: 400 });
+  }
+
+  const prefix = request.nextUrl.searchParams.get("path") || "";
+  const cleanPrefix = prefix.replace(/^\/+/, "");
 
   try {
-    const dirClient = cleanPath
-      ? result.client.getDirectoryClient(cleanPath)
-      : result.client.rootDirectoryClient;
-
+    const containerClient = result.client.getContainerClient(container);
     const entries: { name: string; kind: "directory" | "file"; size?: number }[] = [];
 
-    for await (const item of dirClient.listFilesAndDirectories()) {
-      if (item.kind === "directory") {
-        entries.push({ name: item.name, kind: "directory" });
+    // List blobs with hierarchy (using delimiter to get virtual directories)
+    for await (const item of containerClient.listBlobsByHierarchy("/", {
+      prefix: cleanPrefix ? cleanPrefix + (cleanPrefix.endsWith("/") ? "" : "/") : "",
+    })) {
+      if (item.kind === "prefix") {
+        // Virtual directory
+        const dirName = item.name.replace(/\/$/, "").split("/").pop() || item.name;
+        entries.push({ name: dirName, kind: "directory" });
       } else {
-        const ext = item.name.toLowerCase().split(".").pop();
+        // Blob
+        const fileName = item.name.split("/").pop() || item.name;
+        const ext = fileName.toLowerCase().split(".").pop();
         if (ext === "csv" || ext === "json") {
           entries.push({
-            name: item.name,
+            name: fileName,
             kind: "file",
             size: item.properties?.contentLength,
           });
@@ -72,11 +73,14 @@ export async function GET(request: NextRequest) {
       return a.name.localeCompare(b.name);
     });
 
-    return Response.json({ path: "/" + cleanPath, entries });
+    return Response.json({ path: "/" + cleanPrefix, entries });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Unknown error";
-    if (msg.includes("ResourceNotFound") || msg.includes("ParentNotFound")) {
-      return Response.json({ error: "Path not found" }, { status: 404 });
+    if (msg.includes("ContainerNotFound")) {
+      return Response.json({ error: `Container "${container}" not found` }, { status: 404 });
+    }
+    if (msg.includes("AuthenticationFailed") || msg.includes("AuthorizationFailure")) {
+      return Response.json({ error: "Authentication failed. Check your credentials or permissions." }, { status: 403 });
     }
     return Response.json({ error: msg }, { status: 500 });
   }
