@@ -257,7 +257,7 @@ export default function AzureFileBrowser({ open, onClose, onFileSelected }: Azur
                     <li>In the left menu under <strong>Security + networking</strong>, click <strong>Access keys</strong></li>
                     <li>Click <strong>Show</strong> next to either key, then copy the <strong>Connection string</strong> value</li>
                   </ol>
-                  <p>It looks like: <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded text-[11px]">DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net</code></p>
+                  <p>It looks like: <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded text-[11px] break-all">DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net</code></p>
                 </div>
               </>
             ) : (
