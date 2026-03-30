@@ -188,12 +188,6 @@ export default function FraudValidationPage() {
       }
     } catch { /* ignore */ }
 
-    if (!fraudIds) {
-      setError("No fraud simulation data found. Go to Settings and generate seed data first.");
-      setLoading(false);
-      return;
-    }
-
     setLoading(true);
     setError("");
 
