@@ -343,19 +343,19 @@ export default function AzureFileBrowser({ open, onClose, onFileSelected }: Azur
 
             <div>
               <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Container Name</label>
-              {availableContainers.length > 0 ? (
-                <select
-                  value={formContainer}
-                  onChange={(e) => setFormContainer(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 cursor-pointer"
-                >
-                  <option value="">Select a container...</option>
-                  {availableContainers.map((name) => (
-                    <option key={name} value={name}>{name}</option>
-                  ))}
-                </select>
-              ) : (
-                <div className="flex gap-2">
+              <div className="flex gap-2">
+                {availableContainers.length > 0 ? (
+                  <select
+                    value={formContainer}
+                    onChange={(e) => setFormContainer(e.target.value)}
+                    className="flex-1 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 cursor-pointer"
+                  >
+                    <option value="">Select a container...</option>
+                    {availableContainers.map((name) => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                ) : (
                   <input
                     type="text"
                     value={formContainer}
@@ -363,17 +363,20 @@ export default function AzureFileBrowser({ open, onClose, onFileSelected }: Azur
                     placeholder="e.g. fraud-data"
                     className="flex-1 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400"
                   />
-                  <button
-                    onClick={fetchContainers}
-                    disabled={loadingContainers || (formAuth === "connection_string" && !formConnStr.trim()) || (formAuth === "entra" && !formAccount.trim())}
-                    className="px-3 py-2 rounded-lg text-xs font-medium border border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
-                  >
-                    {loadingContainers ? "Loading..." : "List Containers"}
-                  </button>
-                </div>
-              )}
+                )}
+                <button
+                  onClick={fetchContainers}
+                  disabled={loadingContainers || (formAuth === "connection_string" && !formConnStr.trim()) || (formAuth === "entra" && !formAccount.trim())}
+                  className="px-3 py-2 rounded-lg text-xs font-medium border border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                >
+                  {loadingContainers ? "Loading..." : "List Containers"}
+                </button>
+              </div>
               {containerError && (
-                <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">{containerError}</p>
+                <div className="mt-1.5 p-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-xs text-red-700 dark:text-red-300 space-y-1">
+                  <p>{containerError}</p>
+                  <p className="text-red-600/70 dark:text-red-400/70">This can happen if the storage account has &quot;Allow storage account key access&quot; disabled, or if using a SAS token without list permissions. You can still type the container name manually and click Connect.</p>
+                </div>
               )}
               {availableContainers.length > 0 && (
                 <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1">
@@ -381,7 +384,7 @@ export default function AzureFileBrowser({ open, onClose, onFileSelected }: Azur
                 </p>
               )}
               {!availableContainers.length && !containerError && (
-                <p className="text-[11px] text-gray-400 mt-1">Enter the container name or click &quot;List available containers&quot; after filling in credentials above.</p>
+                <p className="text-[11px] text-gray-400 mt-1">Type the container name directly, or click &quot;List Containers&quot; to auto-discover (requires account-level list permissions).</p>
               )}
             </div>
 
