@@ -245,9 +245,9 @@ export async function GET(request: NextRequest) {
       (existingFraudTxns || []).map((t: { transaction_id: string }) => t.transaction_id)
     );
 
-    detected = [...existingFraudIds].filter(id => scannerMap.has(id)).length;
-    missed = [...existingFraudIds].filter(id => !scannerMap.has(id)).length;
-    falsePositives = [...scannerMap.keys()].filter(id => !existingFraudIds.has(id)).length;
+    detected = [...existingFraudIds].filter((id: string) => scannerMap.has(id)).length;
+    missed = [...existingFraudIds].filter((id: string) => !scannerMap.has(id)).length;
+    falsePositives = [...scannerMap.keys()].filter((id: string) => !existingFraudIds.has(id)).length;
   } else {
     // Single batch — compute from rows (already contains all batch txns)
     detected = rows.filter((r: any) => r.status === "detected").length;
