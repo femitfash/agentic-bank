@@ -64,6 +64,8 @@ export default function AzureFileBrowser({ open, onClose, onFileSelected }: Azur
   const [formConnStr, setFormConnStr] = useState("");
   const [formContainer, setFormContainer] = useState("");
   const [formAccount, setFormAccount] = useState("");
+  const [availableContainers, setAvailableContainers] = useState<string[]>([]);
+  const [loadingContainers, setLoadingContainers] = useState(false);
 
   // Browser state
   const [currentPath, setCurrentPath] = useState("");
@@ -112,6 +114,35 @@ export default function AzureFileBrowser({ open, onClose, onFileSelected }: Azur
       browse("", config);
     }
   }, [open, config, showSetup, browse]);
+
+  async function fetchContainers() {
+    if (formAuth === "connection_string" && !formConnStr.trim()) return;
+    if (formAuth === "entra" && !formAccount.trim()) return;
+    setLoadingContainers(true);
+    setAvailableContainers([]);
+    try {
+      const body = buildBody({
+        authMethod: formAuth,
+        connectionString: formConnStr.trim(),
+        containerName: "",
+        accountName: formAccount.trim(),
+      }, { path: "__list_containers__" });
+      const res = await fetch("/api/admin/fraud-validation/azure-browse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (data.containers) {
+        const names = data.containers.map((c: { name: string }) => c.name);
+        setAvailableContainers(names);
+        if (names.length === 1 && !formContainer) {
+          setFormContainer(names[0]);
+        }
+      }
+    } catch { /* ignore */ }
+    finally { setLoadingContainers(false); }
+  }
 
   function handleSaveConfig() {
     if (!formContainer.trim()) return;
@@ -296,15 +327,45 @@ export default function AzureFileBrowser({ open, onClose, onFileSelected }: Azur
             )}
 
             <div>
-              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Container Name</label>
-              <input
-                type="text"
-                value={formContainer}
-                onChange={(e) => setFormContainer(e.target.value)}
-                placeholder="e.g. fraud-data"
-                className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400"
-              />
-              <p className="text-[11px] text-gray-400 mt-1">Find this in Azure Portal &rarr; Storage Account &rarr; <strong>Containers</strong> in the left menu under Data storage.</p>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400">Container Name</label>
+                <button
+                  onClick={fetchContainers}
+                  disabled={loadingContainers || (formAuth === "connection_string" && !formConnStr.trim()) || (formAuth === "entra" && !formAccount.trim())}
+                  className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {loadingContainers ? "Loading..." : "List available containers"}
+                </button>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={formContainer}
+                  onChange={(e) => setFormContainer(e.target.value)}
+                  placeholder="e.g. fraud-data"
+                  className="flex-1 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400"
+                />
+                {availableContainers.length > 0 && (
+                  <select
+                    value={formContainer}
+                    onChange={(e) => setFormContainer(e.target.value)}
+                    className="px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 cursor-pointer"
+                  >
+                    <option value="">Select...</option>
+                    {availableContainers.map((name) => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              {availableContainers.length > 0 && (
+                <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1">
+                  Found {availableContainers.length} container{availableContainers.length !== 1 ? "s" : ""} in this storage account
+                </p>
+              )}
+              {!availableContainers.length && (
+                <p className="text-[11px] text-gray-400 mt-1">Enter the container name or click &quot;List available containers&quot; after filling in credentials above.</p>
+              )}
             </div>
 
             <div className="flex justify-end gap-2 pt-1">

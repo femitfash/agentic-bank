@@ -42,8 +42,19 @@ export async function POST(request: NextRequest) {
   }
 
   const container = body.container || process.env.AZURE_STORAGE_CONTAINER_NAME;
-  if (!container) {
-    return Response.json({ error: "Container name is required" }, { status: 400 });
+
+  // If no container specified, or special "list" mode — return available containers
+  if (!container || body.path === "__list_containers__") {
+    try {
+      const containers: { name: string }[] = [];
+      for await (const c of result.client.listContainers()) {
+        containers.push({ name: c.name });
+      }
+      return Response.json({ containers });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      return Response.json({ error: `Failed to list containers: ${msg}` }, { status: 500 });
+    }
   }
 
   const prefix = body.path || "";
