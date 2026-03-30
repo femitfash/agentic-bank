@@ -4,14 +4,20 @@ import { DefaultAzureCredential } from "@azure/identity";
 import { createAdminClient } from "@/shared/lib/supabase/admin";
 import { authenticateRequest, getOrganizationId } from "@/shared/lib/auth";
 
-function getBlobServiceClient(request: NextRequest) {
-  const authMethod = request.nextUrl.searchParams.get("auth") || "connection_string";
-  const connStr = request.nextUrl.searchParams.get("conn")
-    || process.env.AZURE_STORAGE_CONNECTION_STRING;
+interface BrowseBody {
+  auth?: "connection_string" | "entra";
+  conn?: string;
+  account?: string;
+  container?: string;
+  path?: string;
+}
+
+function getBlobServiceClient(body: BrowseBody) {
+  const authMethod = body.auth || "connection_string";
+  const connStr = body.conn || process.env.AZURE_STORAGE_CONNECTION_STRING;
 
   if (authMethod === "entra") {
-    const accountName = request.nextUrl.searchParams.get("account")
-      || process.env.AZURE_STORAGE_ACCOUNT_NAME;
+    const accountName = body.account || process.env.AZURE_STORAGE_ACCOUNT_NAME;
     if (!accountName) return { error: "Storage account name is required for Entra SSO" };
     const credential = new DefaultAzureCredential();
     return { client: new BlobServiceClient(`https://${accountName}.blob.core.windows.net`, credential) };
@@ -21,41 +27,39 @@ function getBlobServiceClient(request: NextRequest) {
   return { client: BlobServiceClient.fromConnectionString(connStr) };
 }
 
-export async function GET(request: NextRequest) {
+export async function POST(request: NextRequest) {
   const user = await authenticateRequest();
   if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
   const admin = createAdminClient();
   const orgId = await getOrganizationId(admin, user);
   if (!orgId) return Response.json({ error: "No organization" }, { status: 400 });
 
-  const result = getBlobServiceClient(request);
+  const body: BrowseBody = await request.json();
+
+  const result = getBlobServiceClient(body);
   if ("error" in result) {
     return Response.json({ error: result.error }, { status: 400 });
   }
 
-  const container = request.nextUrl.searchParams.get("container")
-    || process.env.AZURE_STORAGE_CONTAINER_NAME;
+  const container = body.container || process.env.AZURE_STORAGE_CONTAINER_NAME;
   if (!container) {
     return Response.json({ error: "Container name is required" }, { status: 400 });
   }
 
-  const prefix = request.nextUrl.searchParams.get("path") || "";
+  const prefix = body.path || "";
   const cleanPrefix = prefix.replace(/^\/+/, "");
 
   try {
     const containerClient = result.client.getContainerClient(container);
     const entries: { name: string; kind: "directory" | "file"; size?: number }[] = [];
 
-    // List blobs with hierarchy (using delimiter to get virtual directories)
     for await (const item of containerClient.listBlobsByHierarchy("/", {
       prefix: cleanPrefix ? cleanPrefix + (cleanPrefix.endsWith("/") ? "" : "/") : "",
     })) {
       if (item.kind === "prefix") {
-        // Virtual directory
         const dirName = item.name.replace(/\/$/, "").split("/").pop() || item.name;
         entries.push({ name: dirName, kind: "directory" });
       } else {
-        // Blob
         const fileName = item.name.split("/").pop() || item.name;
         const ext = fileName.toLowerCase().split(".").pop();
         if (ext === "csv" || ext === "json") {
@@ -80,7 +84,7 @@ export async function GET(request: NextRequest) {
       return Response.json({ error: `Container "${container}" not found` }, { status: 404 });
     }
     if (msg.includes("AuthenticationFailed") || msg.includes("AuthorizationFailure")) {
-      return Response.json({ error: "Authentication failed. Check your credentials or permissions." }, { status: 403 });
+      return Response.json({ error: "Authentication failed. Check your credentials or permissions. If you are the storage account Owner, you also need the 'Storage Blob Data Reader' role assigned via Access Control (IAM)." }, { status: 403 });
     }
     return Response.json({ error: msg }, { status: 500 });
   }

@@ -32,19 +32,20 @@ function clearConfig() {
   localStorage.removeItem(LS_KEY);
 }
 
-function buildParams(config: AzureConfig, extra?: Record<string, string>) {
-  const params = new URLSearchParams();
-  params.set("auth", config.authMethod);
-  params.set("container", config.containerName);
+function buildBody(config: AzureConfig, extra?: Record<string, string>) {
+  const body: Record<string, string> = {
+    auth: config.authMethod,
+    container: config.containerName,
+  };
   if (config.authMethod === "entra") {
-    params.set("account", config.accountName);
+    body.account = config.accountName;
   } else {
-    params.set("conn", config.connectionString);
+    body.conn = config.connectionString;
   }
   if (extra) {
-    for (const [k, v] of Object.entries(extra)) params.set(k, v);
+    for (const [k, v] of Object.entries(extra)) body[k] = v;
   }
-  return params.toString();
+  return body;
 }
 
 interface AzureFileBrowserProps {
@@ -86,8 +87,11 @@ export default function AzureFileBrowser({ open, onClose, onFileSelected }: Azur
     setLoading(true);
     setError("");
     try {
-      const qs = buildParams(cfg, { path });
-      const res = await fetch(`/api/admin/fraud-validation/azure-browse?${qs}`);
+      const res = await fetch("/api/admin/fraud-validation/azure-browse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildBody(cfg, { path })),
+      });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Failed to browse");
@@ -152,8 +156,11 @@ export default function AzureFileBrowser({ open, onClose, onFileSelected }: Azur
     setFetching(name);
     setError("");
     try {
-      const qs = buildParams(config, { path: filePath });
-      const res = await fetch(`/api/admin/fraud-validation/azure-fetch?${qs}`);
+      const res = await fetch("/api/admin/fraud-validation/azure-fetch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildBody(config, { path: filePath })),
+      });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Failed to fetch file");

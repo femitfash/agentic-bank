@@ -6,14 +6,20 @@ import { authenticateRequest, getOrganizationId } from "@/shared/lib/auth";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 
-function getBlobServiceClient(request: NextRequest) {
-  const authMethod = request.nextUrl.searchParams.get("auth") || "connection_string";
-  const connStr = request.nextUrl.searchParams.get("conn")
-    || process.env.AZURE_STORAGE_CONNECTION_STRING;
+interface FetchBody {
+  auth?: "connection_string" | "entra";
+  conn?: string;
+  account?: string;
+  container?: string;
+  path?: string;
+}
+
+function getBlobServiceClient(body: FetchBody) {
+  const authMethod = body.auth || "connection_string";
+  const connStr = body.conn || process.env.AZURE_STORAGE_CONNECTION_STRING;
 
   if (authMethod === "entra") {
-    const accountName = request.nextUrl.searchParams.get("account")
-      || process.env.AZURE_STORAGE_ACCOUNT_NAME;
+    const accountName = body.account || process.env.AZURE_STORAGE_ACCOUNT_NAME;
     if (!accountName) return { error: "Storage account name is required for Entra SSO" };
     const credential = new DefaultAzureCredential();
     return { client: new BlobServiceClient(`https://${accountName}.blob.core.windows.net`, credential) };
@@ -23,27 +29,28 @@ function getBlobServiceClient(request: NextRequest) {
   return { client: BlobServiceClient.fromConnectionString(connStr) };
 }
 
-export async function GET(request: NextRequest) {
+export async function POST(request: NextRequest) {
   const user = await authenticateRequest();
   if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
   const admin = createAdminClient();
   const orgId = await getOrganizationId(admin, user);
   if (!orgId) return Response.json({ error: "No organization" }, { status: 400 });
 
-  const result = getBlobServiceClient(request);
+  const body: FetchBody = await request.json();
+
+  const result = getBlobServiceClient(body);
   if ("error" in result) {
     return Response.json({ error: result.error }, { status: 400 });
   }
 
-  const container = request.nextUrl.searchParams.get("container")
-    || process.env.AZURE_STORAGE_CONTAINER_NAME;
+  const container = body.container || process.env.AZURE_STORAGE_CONTAINER_NAME;
   if (!container) {
     return Response.json({ error: "Container name is required" }, { status: 400 });
   }
 
-  const blobPath = request.nextUrl.searchParams.get("path");
+  const blobPath = body.path;
   if (!blobPath) {
-    return Response.json({ error: "path parameter required" }, { status: 400 });
+    return Response.json({ error: "path is required" }, { status: 400 });
   }
 
   const ext = blobPath.toLowerCase().split(".").pop();
@@ -67,13 +74,13 @@ export async function GET(request: NextRequest) {
     }
 
     const downloadResponse = await blobClient.download(0);
-    const body = downloadResponse.readableStreamBody;
-    if (!body) {
+    const body2 = downloadResponse.readableStreamBody;
+    if (!body2) {
       return Response.json({ error: "Could not read file" }, { status: 500 });
     }
 
     const chunks: Buffer[] = [];
-    for await (const chunk of body as AsyncIterable<Buffer>) {
+    for await (const chunk of body2 as AsyncIterable<Buffer>) {
       chunks.push(chunk);
     }
     const content = Buffer.concat(chunks).toString("utf-8");
@@ -85,7 +92,7 @@ export async function GET(request: NextRequest) {
       return Response.json({ error: "File not found" }, { status: 404 });
     }
     if (msg.includes("AuthenticationFailed") || msg.includes("AuthorizationFailure")) {
-      return Response.json({ error: "Authentication failed. Check your credentials or permissions." }, { status: 403 });
+      return Response.json({ error: "Authentication failed. Check your credentials or permissions. If you are the storage account Owner, you also need the 'Storage Blob Data Reader' role assigned via Access Control (IAM)." }, { status: 403 });
     }
     return Response.json({ error: msg }, { status: 500 });
   }
