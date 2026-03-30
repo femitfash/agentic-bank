@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { Suspense, useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -69,7 +69,15 @@ function getDateRange(preset: DatePreset): { from: string; to: string } {
 
 const PAGE_SIZE = 50;
 
-export default function TransactionsPage() {
+export default function TransactionsPageWrapper() {
+  return (
+    <Suspense fallback={<div className="p-6 text-gray-400">Loading transactions...</div>}>
+      <TransactionsPage />
+    </Suspense>
+  );
+}
+
+function TransactionsPage() {
   const searchParams = useSearchParams();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
