@@ -250,6 +250,15 @@ export default function AzureFileBrowser({ open, onClose, onFileSelected }: Azur
                     className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400"
                   />
                 </div>
+                <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 text-xs space-y-2">
+                  <p className="font-medium text-gray-700 dark:text-gray-300">Where to find your connection string:</p>
+                  <ol className="list-decimal list-inside space-y-1">
+                    <li>Go to the <strong>Azure Portal</strong> &rarr; your <strong>Storage Account</strong></li>
+                    <li>In the left menu under <strong>Security + networking</strong>, click <strong>Access keys</strong></li>
+                    <li>Click <strong>Show</strong> next to either key, then copy the <strong>Connection string</strong> value</li>
+                  </ol>
+                  <p>It looks like: <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded text-[11px]">DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net</code></p>
+                </div>
               </>
             ) : (
               <>
@@ -262,9 +271,18 @@ export default function AzureFileBrowser({ open, onClose, onFileSelected }: Azur
                     placeholder="e.g. mystorageaccount"
                     className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400"
                   />
+                  <p className="text-[11px] text-gray-400 mt-1">The name from your storage URL: <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">https://<strong>yourname</strong>.file.core.windows.net</code></p>
                 </div>
-                <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 text-xs">
-                  Entra SSO uses your server&apos;s Azure credentials (Managed Identity, Azure CLI, or environment variables). Ensure the app has <strong>Storage File Data Privileged Reader</strong> role on the storage account.
+                <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 text-xs space-y-2">
+                  <p className="font-medium">How Azure Entra SSO works:</p>
+                  <p>Authentication is handled server-side using <strong>DefaultAzureCredential</strong>, which tries these methods in order:</p>
+                  <ol className="list-decimal list-inside space-y-1">
+                    <li><strong>Managed Identity</strong> &mdash; automatic if the app is hosted on Azure (App Service, VM, Container Apps)</li>
+                    <li><strong>Azure CLI</strong> &mdash; uses your <code className="bg-blue-100 dark:bg-blue-900/40 px-1 rounded">az login</code> session for local development</li>
+                    <li><strong>Environment variables</strong> &mdash; set <code className="bg-blue-100 dark:bg-blue-900/40 px-1 rounded">AZURE_TENANT_ID</code>, <code className="bg-blue-100 dark:bg-blue-900/40 px-1 rounded">AZURE_CLIENT_ID</code>, and <code className="bg-blue-100 dark:bg-blue-900/40 px-1 rounded">AZURE_CLIENT_SECRET</code> for a service principal</li>
+                  </ol>
+                  <p className="font-medium pt-1">Required permissions:</p>
+                  <p>The identity needs the <strong>Storage File Data Privileged Reader</strong> role assigned on the storage account. In Azure Portal: Storage Account &rarr; Access Control (IAM) &rarr; Add role assignment.</p>
                 </div>
               </>
             )}
@@ -278,6 +296,7 @@ export default function AzureFileBrowser({ open, onClose, onFileSelected }: Azur
                 placeholder="e.g. fraud-data"
                 className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400"
               />
+              <p className="text-[11px] text-gray-400 mt-1">Find this in Azure Portal &rarr; Storage Account &rarr; <strong>File shares</strong> in the left menu under Data storage.</p>
             </div>
 
             <div className="flex justify-end gap-2 pt-1">
