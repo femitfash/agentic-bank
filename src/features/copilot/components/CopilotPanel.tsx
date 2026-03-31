@@ -11,6 +11,8 @@ interface Message {
   timestamp: Date;
   actions?: CopilotAction[];
   isStreaming?: boolean;
+  attachedFile?: string;
+  reliability?: { score: number; reliable: boolean; checking?: boolean };
 }
 
 interface CopilotAction {
@@ -239,8 +241,43 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
   ]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [uploadedFile, setUploadedFile] = useState<{ name: string; content: string } | null>(null);
+
+  // Safety settings
+  type SafetyMode = "block" | "warn" | "allow";
+  interface SafetySettings { pii_detection: SafetyMode; hallucination_check: SafetyMode }
+  const [safetySettings, setSafetySettings] = useState<SafetySettings>({ pii_detection: "warn", hallucination_check: "warn" });
+  const [piiWarning, setPiiWarning] = useState<{ detections: { entity_type: string; text: string }[]; pendingText: string; pendingFile: { name: string; content: string } | null } | null>(null);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("safety_settings");
+      if (raw) setSafetySettings(JSON.parse(raw));
+    } catch { /* use defaults */ }
+  }, []);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const ext = file.name.toLowerCase().split(".").pop();
+    if (ext !== "csv" && ext !== "json") {
+      alert("Only .csv and .json files are supported");
+      return;
+    }
+    if (file.size > 100 * 1024) {
+      alert("File too large. Maximum 100KB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setUploadedFile({ name: file.name, content: reader.result as string });
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  }
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -249,14 +286,59 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
   // ── Send Message ─────────────────────────────────────────────────────────
 
   const sendMessage = useCallback(
-    async (text: string) => {
-      if (!text.trim() || isLoading) return;
+    async (text: string, bypassPii = false) => {
+      if ((!text.trim() && !uploadedFile) || isLoading) return;
+
+      // Build message with file content if attached
+      const currentFile = uploadedFile;
+      const displayText = text.trim() || (currentFile ? "Process this file" : "");
+      let messageToSend = displayText;
+      if (currentFile) {
+        messageToSend = `[Attached file: ${currentFile.name}]\n${currentFile.content}\n\n${displayText}`;
+      }
+
+      // ── PII Pre-Check (BEFORE any data reaches the LLM) ──────────────
+      if (!bypassPii && safetySettings.pii_detection !== "allow") {
+        try {
+          const piiRes = await fetch("/api/copilot/pii-check", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: messageToSend }),
+          });
+          const piiData = await piiRes.json();
+          if (piiData.has_pii && piiData.detections?.length > 0) {
+            if (safetySettings.pii_detection === "block") {
+              // Block: show error in chat, don't send to LLM
+              const blockMsg: Message = {
+                id: generateId(), role: "assistant",
+                content: "**PII Detected — Content Blocked**\n\nSensitive personal information was found in your message. For security, this content cannot be sent to the AI.\n\nDetected: " +
+                  piiData.detections.map((d: { entity_type: string }) => `\`${d.entity_type}\``).join(", ") +
+                  "\n\n[Sanitize your file here](https://dev.zerotrusted.ai/file-sanitization) before uploading.",
+                timestamp: new Date(),
+              };
+              setMessages((prev) => [...prev, {
+                id: generateId(), role: "user", content: displayText, timestamp: new Date(), attachedFile: currentFile?.name,
+              }, blockMsg]);
+              setInput("");
+              setUploadedFile(null);
+              return;
+            } else {
+              // Warn: show modal, let user decide
+              setPiiWarning({ detections: piiData.detections, pendingText: text, pendingFile: currentFile });
+              return;
+            }
+          }
+        } catch {
+          // PII check failed — proceed anyway to not block the user
+        }
+      }
 
       const userMsg: Message = {
         id: generateId(),
         role: "user",
-        content: text.trim(),
+        content: displayText,
         timestamp: new Date(),
+        attachedFile: currentFile?.name,
       };
 
       const assistantId = generateId();
@@ -270,6 +352,7 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
 
       setMessages((prev) => [...prev, userMsg, assistantMsg]);
       setInput("");
+      setUploadedFile(null);
       setIsLoading(true);
 
       try {
@@ -281,7 +364,7 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            message: text.trim(),
+            message: messageToSend,
             history,
             context,
             ...(customerId ? { customer_id: customerId } : {}),
@@ -335,6 +418,60 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
             }
           }
         }
+
+        // ── Hallucination Post-Check (async, after streaming) ──────────
+        if (safetySettings.hallucination_check !== "allow" && fullText) {
+          // Show "checking" indicator
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId ? { ...m, reliability: { score: 0, reliable: true, checking: true } } : m
+            )
+          );
+
+          try {
+            const hRes = await fetch("/api/copilot/hallucination-check", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ user_prompt: displayText, ai_response: fullText }),
+            });
+            const hData = await hRes.json();
+
+            if (hRes.ok) {
+              const reliable = hData.reliable !== false;
+              const score = hData.score ?? 50;
+
+              if (!reliable && safetySettings.hallucination_check === "block") {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId
+                      ? { ...m, content: "**Response Hidden** — This response was flagged as potentially unreliable (score: " + score + "%). For safety, it has been withheld.", reliability: { score, reliable: false } }
+                      : m
+                  )
+                );
+              } else {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId ? { ...m, reliability: { score, reliable } } : m
+                  )
+                );
+              }
+            } else {
+              // Check failed — remove checking indicator
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId ? { ...m, reliability: undefined } : m
+                )
+              );
+            }
+          } catch {
+            // Hallucination check failed — silently remove indicator
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId ? { ...m, reliability: undefined } : m
+              )
+            );
+          }
+        }
       } catch {
         setMessages((prev) =>
           prev.map((m) =>
@@ -351,7 +488,7 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
         setIsLoading(false);
       }
     },
-    [isLoading, messages, context, customerId]
+    [isLoading, messages, context, customerId, uploadedFile, safetySettings]
   );
 
   const handleSubmit = useCallback(
@@ -511,6 +648,11 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
                     : "bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 rounded-bl-md"
                 }`}
               >
+                {message.attachedFile && (
+                  <div className="text-xs opacity-80 mb-1 flex items-center gap-1">
+                    <span>&#128206;</span> {message.attachedFile}
+                  </div>
+                )}
                 <MarkdownText
                   text={message.content}
                   isUser={message.role === "user"}
@@ -520,6 +662,21 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
                     inputRef.current?.focus();
                   }}
                 />
+                {message.reliability && (
+                  <div className={`mt-2 text-xs px-2 py-1 rounded ${
+                    message.reliability.checking
+                      ? "bg-gray-200/30 text-gray-400"
+                      : message.reliability.reliable
+                        ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
+                        : "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400"
+                  }`}>
+                    {message.reliability.checking
+                      ? "Checking reliability..."
+                      : message.reliability.reliable
+                        ? `Reliability: High (${message.reliability.score}%)`
+                        : `Reliability: Low (${message.reliability.score}%) — treat this response with caution`}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -569,25 +726,103 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
 
       {/* Input */}
       <div className="p-4 border-t border-gray-200 dark:border-gray-800">
+        {uploadedFile && (
+          <div className="flex items-center gap-2 mb-2 px-1">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 px-3 py-1 text-xs font-medium text-blue-700 dark:text-blue-400">
+              <span>&#128206;</span>
+              {uploadedFile.name}
+              <button
+                onClick={() => setUploadedFile(null)}
+                className="ml-1 text-blue-400 hover:text-blue-600 cursor-pointer"
+              >
+                &#x2715;
+              </button>
+            </span>
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="flex gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,.json"
+            className="hidden"
+            onChange={handleFileSelect}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isLoading}
+            className="px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600 transition-colors cursor-pointer disabled:opacity-50"
+            title="Upload CSV or JSON file"
+          >
+            <span className="text-sm">&#128206;</span>
+          </button>
           <input
             ref={inputRef}
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask anything..."
+            placeholder={uploadedFile ? `Ask about ${uploadedFile.name}...` : "Ask anything..."}
             className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
             disabled={isLoading}
           />
           <button
             type="submit"
-            disabled={isLoading || !input.trim()}
+            disabled={isLoading || (!input.trim() && !uploadedFile)}
             className="px-4 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-medium disabled:opacity-50 transition-colors hover:bg-blue-700 cursor-pointer"
           >
             &#x2191;
           </button>
         </form>
       </div>
+
+      {/* PII Warning Modal */}
+      {piiWarning && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 rounded-2xl">
+          <div className="w-[90%] max-w-md bg-white dark:bg-gray-900 rounded-xl border border-red-300 dark:border-red-700 shadow-xl max-h-[80%] flex flex-col">
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 rounded-t-xl">
+              <span className="text-red-600 dark:text-red-400">&#9888;</span>
+              <span className="text-sm font-semibold text-red-700 dark:text-red-400">PII Detected in Content</span>
+            </div>
+            <div className="overflow-y-auto flex-1 p-4 space-y-3">
+              <p className="text-sm text-gray-700 dark:text-gray-300">
+                Sensitive personal information was found. This data has <strong>not</strong> been sent to the AI.
+              </p>
+              <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                {piiWarning.detections.map((d, i) => (
+                  <div key={i} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 text-xs">
+                    <span className="px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 font-semibold uppercase tracking-wider text-[10px]">
+                      {d.entity_type}
+                    </span>
+                    <span className="text-gray-500 font-mono truncate">
+                      {d.text.length > 4 ? d.text.slice(0, 2) + "****" + d.text.slice(-2) : "****"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+              <button
+                onClick={() => setPiiWarning(null)}
+                className="px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const pending = piiWarning;
+                  setPiiWarning(null);
+                  if (pending.pendingFile) setUploadedFile(pending.pendingFile);
+                  sendMessage(pending.pendingText, true);
+                }}
+                className="px-3 py-1.5 rounded-lg text-sm font-medium bg-amber-600 text-white hover:bg-amber-700 cursor-pointer transition-colors"
+              >
+                Send Anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -27,6 +27,21 @@ interface FraudSimData {
 interface CustomerOption { id: string; customer_id: string; first_name: string; last_name: string }
 interface AccountOption { id: string; account_number: string; account_type: string; customer_id: string }
 
+type SafetyMode = "block" | "warn" | "allow";
+interface SafetySettings {
+  pii_detection: SafetyMode;
+  hallucination_check: SafetyMode;
+}
+const DEFAULT_SAFETY: SafetySettings = { pii_detection: "warn", hallucination_check: "warn" };
+const SAFETY_LS_KEY = "safety_settings";
+
+function loadSafetySettings(): SafetySettings {
+  try {
+    const raw = localStorage.getItem(SAFETY_LS_KEY);
+    return raw ? { ...DEFAULT_SAFETY, ...JSON.parse(raw) } : DEFAULT_SAFETY;
+  } catch { return DEFAULT_SAFETY; }
+}
+
 function loadFraudData(): FraudSimData | null {
   try {
     const raw = localStorage.getItem(LS_KEY);
@@ -50,9 +65,21 @@ export default function SettingsPage() {
   const [selectedCustomer, setSelectedCustomer] = useState("");
   const [selectedAccount, setSelectedAccount] = useState("");
 
+  // Safety settings
+  const [safetySettings, setSafetySettings] = useState<SafetySettings>(DEFAULT_SAFETY);
+
+  function updateSafety(key: keyof SafetySettings, value: SafetyMode) {
+    setSafetySettings(prev => {
+      const next = { ...prev, [key]: value };
+      localStorage.setItem(SAFETY_LS_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
+
   // Load persisted data + customer/account lists on mount
   useEffect(() => {
     setFraudData(loadFraudData());
+    setSafetySettings(loadSafetySettings());
     fetch("/api/customers?limit=100").then(r => r.json()).then(d => setCustomers(d.customers || [])).catch(() => {});
     fetch("/api/accounts?limit=100").then(r => r.json()).then(d => setAccounts(d.accounts || [])).catch(() => {});
   }, []);
@@ -160,10 +187,11 @@ export default function SettingsPage() {
 
   const hasData = fraudData && fraudData.fraud_transaction_ids.length > 0;
 
-  const [activeTab, setActiveTab] = useState<"fraud" | "appearance">("fraud");
+  const [activeTab, setActiveTab] = useState<"fraud" | "appearance" | "safety">("fraud");
 
   const tabs = [
     { id: "fraud" as const, label: "Fraud Simulation" },
+    { id: "safety" as const, label: "Safety & Guardrails" },
     { id: "appearance" as const, label: "Appearance" },
   ];
 
@@ -239,6 +267,97 @@ export default function SettingsPage() {
           })}
         </div>
       </div>
+      )}
+
+      {/* Safety & Guardrails Tab */}
+      {activeTab === "safety" && (
+        <div className="space-y-6">
+          {/* PII Detection */}
+          <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">PII Detection</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              Scan content for personally identifiable information (emails, names, phone numbers, addresses, SSN, credit cards) before it reaches the AI model.
+            </p>
+            <div className="grid grid-cols-3 gap-3">
+              {([
+                { value: "block" as SafetyMode, label: "Block", desc: "Prevent sending content with PII", color: "red" },
+                { value: "warn" as SafetyMode, label: "Warn & Continue", desc: "Show warning, user can proceed", color: "amber" },
+                { value: "allow" as SafetyMode, label: "Allow All", desc: "No PII checking", color: "green" },
+              ]).map((opt) => {
+                const selected = safetySettings.pii_detection === opt.value;
+                const borderColor = selected
+                  ? opt.color === "red" ? "border-red-500 bg-red-50 dark:bg-red-900/20"
+                  : opt.color === "amber" ? "border-amber-500 bg-amber-50 dark:bg-amber-900/20"
+                  : "border-green-500 bg-green-50 dark:bg-green-900/20"
+                  : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600";
+                return (
+                  <button
+                    key={opt.value}
+                    onClick={() => updateSafety("pii_detection", opt.value)}
+                    className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-colors cursor-pointer ${borderColor}`}
+                  >
+                    <p className={`text-sm font-medium ${selected
+                      ? opt.color === "red" ? "text-red-700 dark:text-red-400"
+                      : opt.color === "amber" ? "text-amber-700 dark:text-amber-400"
+                      : "text-green-700 dark:text-green-400"
+                      : "text-gray-700 dark:text-gray-300"
+                    }`}>{opt.label}</p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 text-center">{opt.desc}</p>
+                  </button>
+                );
+              })}
+            </div>
+            {safetySettings.pii_detection === "block" && (
+              <div className="mt-3 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-xs text-red-700 dark:text-red-300">
+                When PII is detected, users will be blocked and directed to sanitize their file at{" "}
+                <a href="https://dev.zerotrusted.ai/file-sanitization" target="_blank" rel="noopener noreferrer" className="underline font-medium">
+                  dev.zerotrusted.ai/file-sanitization
+                </a>
+              </div>
+            )}
+          </div>
+
+          {/* Hallucination / Reliability Check */}
+          <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">Hallucination &amp; Reliability Check</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              Evaluate AI responses for factual reliability and hallucination after the copilot responds. Uses multiple LLM evaluations for accuracy.
+            </p>
+            <div className="grid grid-cols-3 gap-3">
+              {([
+                { value: "block" as SafetyMode, label: "Block", desc: "Hide unreliable AI responses", color: "red" },
+                { value: "warn" as SafetyMode, label: "Warn & Continue", desc: "Show reliability warning", color: "amber" },
+                { value: "allow" as SafetyMode, label: "Allow All", desc: "No reliability checking", color: "green" },
+              ]).map((opt) => {
+                const selected = safetySettings.hallucination_check === opt.value;
+                const borderColor = selected
+                  ? opt.color === "red" ? "border-red-500 bg-red-50 dark:bg-red-900/20"
+                  : opt.color === "amber" ? "border-amber-500 bg-amber-50 dark:bg-amber-900/20"
+                  : "border-green-500 bg-green-50 dark:bg-green-900/20"
+                  : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600";
+                return (
+                  <button
+                    key={opt.value}
+                    onClick={() => updateSafety("hallucination_check", opt.value)}
+                    className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-colors cursor-pointer ${borderColor}`}
+                  >
+                    <p className={`text-sm font-medium ${selected
+                      ? opt.color === "red" ? "text-red-700 dark:text-red-400"
+                      : opt.color === "amber" ? "text-amber-700 dark:text-amber-400"
+                      : "text-green-700 dark:text-green-400"
+                      : "text-gray-700 dark:text-gray-300"
+                    }`}>{opt.label}</p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 text-center">{opt.desc}</p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <p className="text-xs text-gray-400 dark:text-gray-500">
+            Safety checks are powered by <a href="https://dev.zerotrusted.ai" target="_blank" rel="noopener noreferrer" className="underline">ZeroTrusted.ai</a> guardrails API.
+          </p>
+        </div>
       )}
 
       {/* Fraud Simulation Tab */}

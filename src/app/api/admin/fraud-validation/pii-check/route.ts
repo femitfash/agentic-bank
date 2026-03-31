@@ -1,10 +1,7 @@
 import { NextRequest } from "next/server";
 import { createAdminClient } from "@/shared/lib/supabase/admin";
 import { authenticateRequest, getOrganizationId } from "@/shared/lib/auth";
-
-const GUARDRAILS_URL = "https://dev-guardrails.zerotrusted.ai/api/v3";
-const GUARDRAILS_TOKEN = "zt-0368d82c8af54483b61441e3e142825c";
-const PII_ENTITY_TYPES = "email, email address, gmail, person, organization, phone number, address, passport number, credit card number, social security number";
+import { GUARDRAILS_URL, GUARDRAILS_TOKEN, PII_ENTITY_TYPES } from "@/shared/lib/guardrails";
 
 export async function POST(request: NextRequest) {
   const user = await authenticateRequest();
