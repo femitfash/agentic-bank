@@ -675,7 +675,7 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
                           ? "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400"
                           : "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400"
                   }`}>
-                    {message.validation.status === "scanning" && "Scanning for sensitive data..."}
+                    {message.validation.status === "scanning" && (<span className="inline-flex items-center gap-1.5">Scanning for sensitive data<span className="inline-flex gap-0.5 ml-0.5"><span className="w-1 h-1 rounded-full bg-current animate-bounce" style={{ animationDelay: "0ms" }} /><span className="w-1 h-1 rounded-full bg-current animate-bounce" style={{ animationDelay: "150ms" }} /><span className="w-1 h-1 rounded-full bg-current animate-bounce" style={{ animationDelay: "300ms" }} /></span></span>)}
                     {message.validation.status === "passed" && "Sensitive Data Validation: Passed"}
                     {message.validation.status === "failed" && "Sensitive Data Validation: Failed"}
                     {message.validation.status === "skipped" && "Sensitive Data Validation: Skipped"}
