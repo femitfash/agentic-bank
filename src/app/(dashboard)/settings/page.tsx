@@ -28,11 +28,12 @@ interface CustomerOption { id: string; customer_id: string; first_name: string; 
 interface AccountOption { id: string; account_number: string; account_type: string; customer_id: string }
 
 type SafetyMode = "block" | "warn" | "allow";
+type HallucinationMode = SafetyMode | "manual";
 interface SafetySettings {
   pii_detection: SafetyMode;
-  hallucination_check: SafetyMode;
+  hallucination_check: HallucinationMode;
 }
-const DEFAULT_SAFETY: SafetySettings = { pii_detection: "warn", hallucination_check: "warn" };
+const DEFAULT_SAFETY: SafetySettings = { pii_detection: "warn", hallucination_check: "manual" };
 const SAFETY_LS_KEY = "safety_settings";
 
 function loadSafetySettings(): SafetySettings {
@@ -68,7 +69,7 @@ export default function SettingsPage() {
   // Safety settings
   const [safetySettings, setSafetySettings] = useState<SafetySettings>(DEFAULT_SAFETY);
 
-  function updateSafety(key: keyof SafetySettings, value: SafetyMode) {
+  function updateSafety(key: keyof SafetySettings, value: SafetyMode | HallucinationMode) {
     setSafetySettings(prev => {
       const next = { ...prev, [key]: value };
       localStorage.setItem(SAFETY_LS_KEY, JSON.stringify(next));
@@ -323,15 +324,17 @@ export default function SettingsPage() {
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
               Evaluate AI responses for factual reliability and hallucination after the copilot responds. Uses multiple LLM evaluations for accuracy.
             </p>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-4 gap-3">
               {([
-                { value: "block" as SafetyMode, label: "Block", desc: "Hide unreliable AI responses", color: "red" },
-                { value: "warn" as SafetyMode, label: "Warn & Continue", desc: "Show reliability warning", color: "amber" },
-                { value: "allow" as SafetyMode, label: "Allow All", desc: "No reliability checking", color: "green" },
+                { value: "manual" as HallucinationMode, label: "On-Demand", desc: "Run manually per response (default)", color: "blue" },
+                { value: "block" as HallucinationMode, label: "Block", desc: "Auto-hide unreliable responses", color: "red" },
+                { value: "warn" as HallucinationMode, label: "Warn & Continue", desc: "Auto-show reliability warning", color: "amber" },
+                { value: "allow" as HallucinationMode, label: "Allow All", desc: "No reliability checking", color: "green" },
               ]).map((opt) => {
                 const selected = safetySettings.hallucination_check === opt.value;
                 const borderColor = selected
-                  ? opt.color === "red" ? "border-red-500 bg-red-50 dark:bg-red-900/20"
+                  ? opt.color === "blue" ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
+                  : opt.color === "red" ? "border-red-500 bg-red-50 dark:bg-red-900/20"
                   : opt.color === "amber" ? "border-amber-500 bg-amber-50 dark:bg-amber-900/20"
                   : "border-green-500 bg-green-50 dark:bg-green-900/20"
                   : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600";
@@ -339,10 +342,11 @@ export default function SettingsPage() {
                   <button
                     key={opt.value}
                     onClick={() => updateSafety("hallucination_check", opt.value)}
-                    className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-colors cursor-pointer ${borderColor}`}
+                    className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-colors cursor-pointer ${borderColor}`}
                   >
                     <p className={`text-sm font-medium ${selected
-                      ? opt.color === "red" ? "text-red-700 dark:text-red-400"
+                      ? opt.color === "blue" ? "text-blue-700 dark:text-blue-400"
+                      : opt.color === "red" ? "text-red-700 dark:text-red-400"
                       : opt.color === "amber" ? "text-amber-700 dark:text-amber-400"
                       : "text-green-700 dark:text-green-400"
                       : "text-gray-700 dark:text-gray-300"

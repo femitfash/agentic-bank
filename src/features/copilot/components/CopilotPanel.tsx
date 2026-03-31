@@ -246,8 +246,9 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
 
   // Safety settings
   type SafetyMode = "block" | "warn" | "allow";
-  interface SafetySettings { pii_detection: SafetyMode; hallucination_check: SafetyMode }
-  const [safetySettings, setSafetySettings] = useState<SafetySettings>({ pii_detection: "warn", hallucination_check: "warn" });
+  type HallucinationMode = SafetyMode | "manual";
+  interface SafetySettings { pii_detection: SafetyMode; hallucination_check: HallucinationMode }
+  const [safetySettings, setSafetySettings] = useState<SafetySettings>({ pii_detection: "warn", hallucination_check: "manual" });
   const [piiWarning, setPiiWarning] = useState<{ detections: { entity_type: string; text: string }[]; pendingText: string; pendingFile: { name: string; content: string } | null } | null>(null);
 
   useEffect(() => {
@@ -432,7 +433,7 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
         }
 
         // ── Hallucination Post-Check (async, after streaming) ──────────
-        if (safetySettings.hallucination_check !== "allow" && fullText) {
+        if (safetySettings.hallucination_check !== "allow" && safetySettings.hallucination_check !== "manual" && fullText) {
           // Show "checking" indicator
           setMessages((prev) =>
             prev.map((m) =>
@@ -510,6 +511,62 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
     },
     [input, sendMessage]
   );
+
+  // On-demand reliability check for a specific assistant message
+  const runReliabilityCheck = useCallback(async (messageId: string) => {
+    // Find the assistant message and the preceding user message
+    const msgIndex = messages.findIndex((m) => m.id === messageId);
+    if (msgIndex < 0) return;
+    const assistantMsg = messages[msgIndex];
+    if (!assistantMsg.content || assistantMsg.role !== "assistant") return;
+
+    // Find the last user message before this assistant message
+    let userPrompt = "";
+    for (let i = msgIndex - 1; i >= 0; i--) {
+      if (messages[i].role === "user") {
+        userPrompt = messages[i].content;
+        break;
+      }
+    }
+
+    // Show checking indicator
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === messageId ? { ...m, reliability: { score: 0, reliable: true, checking: true } } : m
+      )
+    );
+
+    try {
+      const res = await fetch("/api/copilot/hallucination-check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_prompt: userPrompt, ai_response: assistantMsg.content }),
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        const reliable = data.reliable !== false;
+        const score = data.score ?? 50;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === messageId ? { ...m, reliability: { score, reliable } } : m
+          )
+        );
+      } else {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === messageId ? { ...m, reliability: undefined } : m
+          )
+        );
+      }
+    } catch {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId ? { ...m, reliability: undefined } : m
+        )
+      );
+    }
+  }, [messages]);
 
   // ── Execute / Reject Actions ─────────────────────────────────────────────
 
@@ -690,20 +747,29 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
                     inputRef.current?.focus();
                   }}
                 />
-                {message.reliability && (
-                  <div className={`mt-2 text-xs px-2 py-1 rounded ${
+                {message.reliability ? (
+                  <div className={`mt-2 text-xs px-2.5 py-1.5 rounded-lg font-medium ${
                     message.reliability.checking
-                      ? "bg-gray-200/30 text-gray-400"
+                      ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400"
                       : message.reliability.reliable
                         ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
                         : "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400"
                   }`}>
                     {message.reliability.checking
-                      ? "Checking reliability..."
+                      ? (<span className="inline-flex items-center gap-1.5">Checking reliability<span className="inline-flex gap-0.5 ml-0.5"><span className="w-1 h-1 rounded-full bg-current animate-bounce" style={{ animationDelay: "0ms" }} /><span className="w-1 h-1 rounded-full bg-current animate-bounce" style={{ animationDelay: "150ms" }} /><span className="w-1 h-1 rounded-full bg-current animate-bounce" style={{ animationDelay: "300ms" }} /></span></span>)
                       : message.reliability.reliable
                         ? `Reliability: High (${message.reliability.score}%)`
                         : `Reliability: Low (${message.reliability.score}%) — treat this response with caution`}
                   </div>
+                ) : (
+                  message.role === "assistant" && !message.isStreaming && message.content && safetySettings.hallucination_check !== "allow" && message.id !== "welcome" && (
+                    <button
+                      onClick={() => runReliabilityCheck(message.id)}
+                      className="mt-2 text-[11px] text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer transition-colors"
+                    >
+                      Check Reliability
+                    </button>
+                  )
                 )}
               </div>
             </div>
