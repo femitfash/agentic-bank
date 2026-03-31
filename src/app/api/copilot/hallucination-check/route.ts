@@ -23,6 +23,10 @@ export async function POST(request: NextRequest) {
       headers: {
         "X-Custom-Token": HALLUCINATION_TOKEN,
         "Content-Type": "application/json",
+        "accept": "application/json, text/plain, */*",
+        "origin": "https://dev.zerotrusted.ai",
+        "referer": "https://dev.zerotrusted.ai/",
+        "user-agent": "Mozilla/5.0 (compatible; AgenticBank/1.0)",
       },
       body: JSON.stringify({
         provider_api_key: ENCRYPTED_PROVIDER_KEY,
@@ -38,10 +42,12 @@ export async function POST(request: NextRequest) {
 
     if (!res.ok) {
       const errText = await res.text();
+      console.error("[Hallucination Check] ZTA API error:", res.status, errText);
       return Response.json({ error: `Reliability check failed: ${res.status} ${errText}` }, { status: 502 });
     }
 
     const data = await res.json();
+    console.log("[Hallucination Check] ZTA response:", JSON.stringify(data).slice(0, 500));
 
     // Extract reliability score from response
     const score = data?.overall_score ?? data?.reliability_score ?? data?.score ?? 50;

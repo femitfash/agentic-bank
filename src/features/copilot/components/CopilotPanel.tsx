@@ -338,7 +338,7 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
                 m.id === assistantId ? {
                   ...m,
                   content: "Sensitive personal information was detected. For security, this has not been sent to the AI.\n\nDetected: " + detectedTypes +
-                    "\n\n[Sanitize your file here](https://dev.zerotrusted.ai/file-sanitization) before uploading.",
+                    "\n\n[Sanitize your file here](https://dev.zerotrusted.ai/file-sanitization) before uploading.\n\n*Powered by [ZeroTrusted.ai](https://dev.zerotrusted.ai)*",
                   validation: { status: "failed", details: detectedTypes },
                 } : m
               ));
@@ -895,6 +895,7 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
                   </div>
                 ))}
               </div>
+              <p className="text-[10px] text-gray-400 dark:text-gray-500">Powered by <a href="https://dev.zerotrusted.ai" target="_blank" rel="noopener noreferrer" className="underline">ZeroTrusted.ai</a></p>
             </div>
             <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
               <button

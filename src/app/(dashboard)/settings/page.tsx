@@ -358,8 +358,60 @@ export default function SettingsPage() {
             </div>
           </div>
 
+          {/* How It Works */}
+          <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2">How Safety Checks Work</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
+              PII detection runs <strong>before</strong> any data is sent to the AI model. Your content is validated by ZeroTrusted.ai first — it never reaches the LLM until it passes.
+              Hallucination checks run <strong>after</strong> the AI responds, evaluating reliability across multiple models.
+            </p>
+            <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-gray-50 dark:bg-gray-800">
+                    <th className="px-3 py-2 text-left font-medium text-gray-600 dark:text-gray-300">Scenario</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-600 dark:text-gray-300">ZTA Called?</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-600 dark:text-gray-300">Data Reaches LLM?</th>
+                  </tr>
+                </thead>
+                <tbody className="text-gray-700 dark:text-gray-300">
+                  <tr className="border-t border-gray-100 dark:border-gray-800">
+                    <td className="px-3 py-1.5">PII Block mode, PII found</td>
+                    <td className="px-3 py-1.5 text-green-600 dark:text-green-400">Yes</td>
+                    <td className="px-3 py-1.5 text-red-600 dark:text-red-400 font-medium">No (blocked)</td>
+                  </tr>
+                  <tr className="border-t border-gray-100 dark:border-gray-800">
+                    <td className="px-3 py-1.5">PII Block mode, no PII</td>
+                    <td className="px-3 py-1.5 text-green-600 dark:text-green-400">Yes</td>
+                    <td className="px-3 py-1.5">Yes (after ZTA passes)</td>
+                  </tr>
+                  <tr className="border-t border-gray-100 dark:border-gray-800">
+                    <td className="px-3 py-1.5">PII Warn mode, PII found, user cancels</td>
+                    <td className="px-3 py-1.5 text-green-600 dark:text-green-400">Yes</td>
+                    <td className="px-3 py-1.5 text-red-600 dark:text-red-400 font-medium">No</td>
+                  </tr>
+                  <tr className="border-t border-gray-100 dark:border-gray-800">
+                    <td className="px-3 py-1.5">PII Warn mode, user clicks &quot;Send Anyway&quot;</td>
+                    <td className="px-3 py-1.5 text-green-600 dark:text-green-400">Yes</td>
+                    <td className="px-3 py-1.5">Yes (user override)</td>
+                  </tr>
+                  <tr className="border-t border-gray-100 dark:border-gray-800">
+                    <td className="px-3 py-1.5">PII Allow All mode</td>
+                    <td className="px-3 py-1.5 text-gray-400">No</td>
+                    <td className="px-3 py-1.5">Yes (directly)</td>
+                  </tr>
+                  <tr className="border-t border-gray-100 dark:border-gray-800">
+                    <td className="px-3 py-1.5">ZTA API error</td>
+                    <td className="px-3 py-1.5 text-amber-600 dark:text-amber-400">Attempted</td>
+                    <td className="px-3 py-1.5">Yes (graceful fallback)</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           <p className="text-xs text-gray-400 dark:text-gray-500">
-            Safety checks are powered by <a href="https://dev.zerotrusted.ai" target="_blank" rel="noopener noreferrer" className="underline">ZeroTrusted.ai</a> guardrails API.
+            Safety checks are powered by <a href="https://dev.zerotrusted.ai" target="_blank" rel="noopener noreferrer" className="underline font-medium">ZeroTrusted.ai</a> guardrails API.
           </p>
         </div>
       )}
