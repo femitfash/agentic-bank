@@ -30,27 +30,19 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await res.json();
-    console.log("[PII Check] ZeroTrusted API response:", JSON.stringify(data).slice(0, 500));
 
-    // Support multiple response formats from ZeroTrusted API
-    const detections = data?.detected_entities || data?.entities || data?.results || data?.pii_detected || [];
-
-    // Handle case where response is a flat object with is_detected flag
-    if (!Array.isArray(detections) && data?.is_detected !== undefined) {
-      return Response.json({
-        has_pii: data.is_detected === true,
-        detections: data.is_detected ? [{ entity_type: "PII", text: "sensitive content detected" }] : [],
-        raw: data,
-      });
-    }
+    // ZeroTrusted response format:
+    // data.privacy_result.pii_entities = [["john.doe@example.com", "EMAIL_ADDRESS"], ["John Doe", "PERSON"], ...]
+    // data.privacy_result.processing_stats.entities_detected = 3
+    const privacyResult = data?.privacy_result;
+    const piiEntities: [string, string][] = privacyResult?.pii_entities || [];
 
     return Response.json({
-      has_pii: Array.isArray(detections) ? detections.length > 0 : false,
-      detections: Array.isArray(detections) ? detections.map((d: Record<string, unknown>) => ({
-        entity_type: d.entity_type || d.type || "PII",
-        text: d.text || d.value || d.word || "",
-      })) : [],
-      raw: data,
+      has_pii: piiEntities.length > 0,
+      detections: piiEntities.map(([text, entityType]: [string, string]) => ({
+        entity_type: entityType,
+        text,
+      })),
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Unknown error";

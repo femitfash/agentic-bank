@@ -29,7 +29,8 @@ interface ColumnMapperProps {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-interface PiiDetection { entity_type: string; text: string; start: number; end: number; score?: number; [key: string]: any }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+interface PiiDetection { entity_type: string; text: string; start?: number; end?: number; score?: number; [key: string]: any }
 
 function parseCsvRows(text: string): Record<string, string>[] {
   const lines = text.trim().split("\n");
@@ -188,22 +189,22 @@ export default function ColumnMapper({ open, filename, rawContent, accountId, on
       const result = data.result;
 
       if (piiMode === "detect") {
-        // Check if PII was found
-        const detections: PiiDetection[] = result?.detected_entities
-          || result?.entities
-          || result?.results
-          || [];
-        if (detections.length > 0) {
-          setPiiDetections(detections);
+        // ZeroTrusted response: result.privacy_result.pii_entities = [["text", "TYPE"], ...]
+        const piiEntities: [string, string][] = result?.privacy_result?.pii_entities || [];
+        if (piiEntities.length > 0) {
+          setPiiDetections(piiEntities.map(([text, entityType]: [string, string]) => ({
+            entity_type: entityType,
+            text,
+          })));
           setShowPiiWarning(true);
           return false; // block upload
         }
         return true; // no PII found, proceed
       } else {
-        // Anonymize mode — use the anonymized text
-        const anonymizedText = result?.anonymized_text
+        // Anonymize mode — use the anonymized text from ZeroTrusted response
+        const anonymizedText = result?.privacy_result?.processed_text
+          || result?.anonymized_text
           || result?.result
-          || result?.text
           || null;
         if (anonymizedText) {
           setPiiAnonymizedContent(anonymizedText);
