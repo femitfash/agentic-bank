@@ -13,6 +13,7 @@ interface Message {
   isStreaming?: boolean;
   attachedFile?: string;
   reliability?: { score: number; reliable: boolean; checking?: boolean };
+  validation?: { status: "scanning" | "passed" | "failed" | "skipped"; details?: string };
 }
 
 interface CopilotAction {
@@ -305,63 +306,65 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
         timestamp: new Date(),
         attachedFile: currentFile?.name,
       };
-      setMessages((prev) => [...prev, userMsg]);
+      const assistantId = generateId();
+      let validationResult: Message["validation"] = undefined;
+
       setInput("");
       setUploadedFile(null);
 
       // ── PII Pre-Check (BEFORE any data reaches the LLM) ──────────────
       if (!bypassPii && safetySettings.pii_detection !== "allow") {
+        // Show scanning indicator
+        setMessages((prev) => [...prev, userMsg, {
+          id: assistantId, role: "assistant", content: "", timestamp: new Date(),
+          validation: { status: "scanning" },
+        }]);
+
         try {
           const piiRes = await fetch("/api/copilot/pii-check", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ text: messageToSend }),
           });
-          const piiData = await piiRes.json();
+          const piiData = piiRes.ok ? await piiRes.json() : { has_pii: false, detections: [], error: true };
+
           if (piiData.has_pii && piiData.detections?.length > 0) {
+            const detectedTypes = piiData.detections.map((d: { entity_type: string }) => d.entity_type).join(", ");
             if (safetySettings.pii_detection === "block") {
-              // Block: show validation failed + don't send to LLM
-              setMessages((prev) => [...prev, {
-                id: generateId(), role: "assistant",
-                content: "**Sensitive Data Validation: Failed**\n\nSensitive personal information was detected in your content. For security, this has not been sent to the AI.\n\nDetected: " +
-                  piiData.detections.map((d: { entity_type: string }) => `\`${d.entity_type}\``).join(", ") +
-                  "\n\n[Sanitize your file here](https://dev.zerotrusted.ai/file-sanitization) before uploading.",
-                timestamp: new Date(),
-              }]);
+              // Block: show validation failed in the response, don't send to LLM
+              setMessages((prev) => prev.map((m) =>
+                m.id === assistantId ? {
+                  ...m,
+                  content: "Sensitive personal information was detected. For security, this has not been sent to the AI.\n\nDetected: " + detectedTypes +
+                    "\n\n[Sanitize your file here](https://dev.zerotrusted.ai/file-sanitization) before uploading.",
+                  validation: { status: "failed", details: detectedTypes },
+                } : m
+              ));
               return;
             } else {
-              // Warn: show modal, let user decide
+              // Warn: remove scanning message, show modal
+              setMessages((prev) => prev.filter((m) => m.id !== assistantId));
               setPiiWarning({ detections: piiData.detections, pendingText: text, pendingFile: currentFile });
               return;
             }
           } else {
-            // PII check passed — show validation passed
-            setMessages((prev) => [...prev, {
-              id: generateId(), role: "assistant",
-              content: "**Sensitive Data Validation: Passed** — No PII detected. Processing your request...",
-              timestamp: new Date(),
-            }]);
+            validationResult = { status: piiData.error ? "skipped" : "passed" };
           }
         } catch {
-          // PII check error — proceed but note it
-          setMessages((prev) => [...prev, {
-            id: generateId(), role: "assistant",
-            content: "**Sensitive Data Validation: Skipped** — Could not reach validation service. Proceeding with your request...",
-            timestamp: new Date(),
-          }]);
+          validationResult = { status: "skipped" };
         }
+
+        // Update to show passed/skipped, then continue to streaming
+        setMessages((prev) => prev.map((m) =>
+          m.id === assistantId ? { ...m, content: "", isStreaming: true, validation: validationResult } : m
+        ));
+      } else {
+        // No PII check — add user + assistant messages directly
+        setMessages((prev) => [...prev, userMsg, {
+          id: assistantId, role: "assistant", content: "", timestamp: new Date(), isStreaming: true,
+        }]);
       }
 
-      const assistantId = generateId();
-      const assistantMsg: Message = {
-        id: assistantId,
-        role: "assistant",
-        content: "",
-        timestamp: new Date(),
-        isStreaming: true,
-      };
-
-      setMessages((prev) => [...prev, assistantMsg]);
       setIsLoading(true);
 
       try {
@@ -660,6 +663,22 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
                 {message.attachedFile && (
                   <div className="text-xs opacity-80 mb-1 flex items-center gap-1">
                     <span>&#128206;</span> {message.attachedFile}
+                  </div>
+                )}
+                {message.validation && (
+                  <div className={`text-xs px-2.5 py-1.5 rounded-lg mb-2 font-medium ${
+                    message.validation.status === "scanning"
+                      ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400"
+                      : message.validation.status === "passed"
+                        ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
+                        : message.validation.status === "failed"
+                          ? "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400"
+                          : "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400"
+                  }`}>
+                    {message.validation.status === "scanning" && "Scanning for sensitive data..."}
+                    {message.validation.status === "passed" && "Sensitive Data Validation: Passed"}
+                    {message.validation.status === "failed" && "Sensitive Data Validation: Failed"}
+                    {message.validation.status === "skipped" && "Sensitive Data Validation: Skipped"}
                   </div>
                 )}
                 <MarkdownText

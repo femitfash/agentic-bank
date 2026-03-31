@@ -10,8 +10,11 @@ export async function POST(request: NextRequest) {
   if (!text) return Response.json({ error: "text is required" }, { status: 400 });
 
   try {
+    // Truncate to avoid overwhelming the API (scan first ~10KB)
+    const scanText = text.length > 10000 ? text.slice(0, 10000) : text;
+
     const formData = new FormData();
-    formData.append("user_prompt", text);
+    formData.append("user_prompt", scanText);
     formData.append("pii_entity_types", PII_ENTITY_TYPES);
 
     const res = await fetch(`${GUARDRAILS_URL}/detect-sensitive-keywords`, {
