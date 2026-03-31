@@ -328,6 +328,7 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
             body: JSON.stringify({ text: messageToSend }),
           });
           const piiData = piiRes.ok ? await piiRes.json() : { has_pii: false, detections: [], error: true };
+          console.log("[PII Check] Response:", piiRes.status, piiData);
 
           if (piiData.has_pii && piiData.detections?.length > 0) {
             const detectedTypes = piiData.detections.map((d: { entity_type: string }) => d.entity_type).join(", ");

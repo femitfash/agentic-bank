@@ -25,18 +25,32 @@ export async function POST(request: NextRequest) {
 
     if (!res.ok) {
       const errText = await res.text();
+      console.error("[PII Check] ZeroTrusted API error:", res.status, errText);
       return Response.json({ error: `PII check failed: ${res.status} ${errText}` }, { status: 502 });
     }
 
     const data = await res.json();
-    const detections = data?.detected_entities || data?.entities || data?.results || [];
+    console.log("[PII Check] ZeroTrusted API response:", JSON.stringify(data).slice(0, 500));
+
+    // Support multiple response formats from ZeroTrusted API
+    const detections = data?.detected_entities || data?.entities || data?.results || data?.pii_detected || [];
+
+    // Handle case where response is a flat object with is_detected flag
+    if (!Array.isArray(detections) && data?.is_detected !== undefined) {
+      return Response.json({
+        has_pii: data.is_detected === true,
+        detections: data.is_detected ? [{ entity_type: "PII", text: "sensitive content detected" }] : [],
+        raw: data,
+      });
+    }
 
     return Response.json({
-      has_pii: detections.length > 0,
-      detections: detections.map((d: Record<string, unknown>) => ({
+      has_pii: Array.isArray(detections) ? detections.length > 0 : false,
+      detections: Array.isArray(detections) ? detections.map((d: Record<string, unknown>) => ({
         entity_type: d.entity_type || d.type || "PII",
-        text: d.text || d.value || "",
-      })),
+        text: d.text || d.value || d.word || "",
+      })) : [],
+      raw: data,
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Unknown error";
