@@ -337,14 +337,8 @@ withdrawal,45.99,Online Purchase - Streaming Service,2026-02-18T20:45:00Z,comple
     setPayloadLoading(true);
     setPayloadError("");
     try {
-      const raw = localStorage.getItem("fraud_sim_data");
-      if (!raw) { setPayloadError("No seed data found. Generate seed data in Settings first."); return; }
-      const sim = JSON.parse(raw);
-      const customerUuid = sim.customer_uuid;
-      if (!customerUuid) { setPayloadError("No customer UUID found in seed data. Try regenerating seed data."); return; }
-
-      // Use admin preview endpoint — returns the exact same payload shape as the scanner batch API
-      const res = await fetch(`/api/admin/fraud-validation/preview-payload?customer_uuid=${customerUuid}&batch_size=50`);
+      // Preview endpoint returns all org transactions — no customer scoping needed
+      const res = await fetch("/api/admin/fraud-validation/preview-payload?batch_size=50");
       const data = await res.json();
       setPayloadData(JSON.stringify(data, null, 2));
     } catch {
