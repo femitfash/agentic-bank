@@ -297,6 +297,18 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
         messageToSend = `[Attached file: ${currentFile.name}]\n${currentFile.content}\n\n${displayText}`;
       }
 
+      // Always show user message with file indicator immediately
+      const userMsg: Message = {
+        id: generateId(),
+        role: "user",
+        content: displayText,
+        timestamp: new Date(),
+        attachedFile: currentFile?.name,
+      };
+      setMessages((prev) => [...prev, userMsg]);
+      setInput("");
+      setUploadedFile(null);
+
       // ── PII Pre-Check (BEFORE any data reaches the LLM) ──────────────
       if (!bypassPii && safetySettings.pii_detection !== "allow") {
         try {
@@ -308,38 +320,37 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
           const piiData = await piiRes.json();
           if (piiData.has_pii && piiData.detections?.length > 0) {
             if (safetySettings.pii_detection === "block") {
-              // Block: show error in chat, don't send to LLM
-              const blockMsg: Message = {
+              // Block: show validation failed + don't send to LLM
+              setMessages((prev) => [...prev, {
                 id: generateId(), role: "assistant",
-                content: "**PII Detected — Content Blocked**\n\nSensitive personal information was found in your message. For security, this content cannot be sent to the AI.\n\nDetected: " +
+                content: "**Sensitive Data Validation: Failed**\n\nSensitive personal information was detected in your content. For security, this has not been sent to the AI.\n\nDetected: " +
                   piiData.detections.map((d: { entity_type: string }) => `\`${d.entity_type}\``).join(", ") +
                   "\n\n[Sanitize your file here](https://dev.zerotrusted.ai/file-sanitization) before uploading.",
                 timestamp: new Date(),
-              };
-              setMessages((prev) => [...prev, {
-                id: generateId(), role: "user", content: displayText, timestamp: new Date(), attachedFile: currentFile?.name,
-              }, blockMsg]);
-              setInput("");
-              setUploadedFile(null);
+              }]);
               return;
             } else {
               // Warn: show modal, let user decide
               setPiiWarning({ detections: piiData.detections, pendingText: text, pendingFile: currentFile });
               return;
             }
+          } else {
+            // PII check passed — show validation passed
+            setMessages((prev) => [...prev, {
+              id: generateId(), role: "assistant",
+              content: "**Sensitive Data Validation: Passed** — No PII detected. Processing your request...",
+              timestamp: new Date(),
+            }]);
           }
         } catch {
-          // PII check failed — proceed anyway to not block the user
+          // PII check error — proceed but note it
+          setMessages((prev) => [...prev, {
+            id: generateId(), role: "assistant",
+            content: "**Sensitive Data Validation: Skipped** — Could not reach validation service. Proceeding with your request...",
+            timestamp: new Date(),
+          }]);
         }
       }
-
-      const userMsg: Message = {
-        id: generateId(),
-        role: "user",
-        content: displayText,
-        timestamp: new Date(),
-        attachedFile: currentFile?.name,
-      };
 
       const assistantId = generateId();
       const assistantMsg: Message = {
@@ -350,9 +361,7 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
         isStreaming: true,
       };
 
-      setMessages((prev) => [...prev, userMsg, assistantMsg]);
-      setInput("");
-      setUploadedFile(null);
+      setMessages((prev) => [...prev, assistantMsg]);
       setIsLoading(true);
 
       try {

@@ -276,7 +276,7 @@ export default function SettingsPage() {
           <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
             <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">PII Detection</h3>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-              Scan content for personally identifiable information (emails, names, phone numbers, addresses, SSN, credit cards) before it reaches the AI model.
+              Scan content for personally identifiable information (emails, names, phone numbers, addresses, SSN, credit cards). This check runs <strong>before</strong> any data is sent to the AI model — your content never reaches the LLM until it passes validation.
             </p>
             <div className="grid grid-cols-3 gap-3">
               {([
