@@ -34,31 +34,39 @@ interface CopilotPanelProps {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 const SCAN_STEPS = [
-  "Checking for SSN...",
-  "Checking for credit cards...",
-  "Checking for email addresses...",
-  "Checking for phone numbers...",
-  "Checking for names & addresses...",
-  "Checking for date of birth...",
-  "Checking for passport numbers...",
-  "Finalizing scan...",
+  "Scanning for Social Security Numbers",
+  "Scanning for credit card numbers",
+  "Scanning for email addresses",
+  "Scanning for phone numbers",
+  "Scanning for names and addresses",
+  "Scanning for dates of birth",
+  "Scanning for passport numbers",
+  "Scanning for bank account numbers",
+  "Scanning for driver's license numbers",
+  "Scanning for health insurance IDs",
+  "Scanning for tax identification numbers",
+  "Scanning for IP addresses and URLs",
+  "Cross-referencing entity patterns",
+  "Validating detection results",
 ];
 
 function ScanningSteps() {
   const [step, setStep] = useState(0);
   useEffect(() => {
     const interval = setInterval(() => {
-      setStep((s) => (s + 1) % SCAN_STEPS.length);
-    }, 800);
+      setStep((s) => Math.min(s + 1, SCAN_STEPS.length - 1));
+    }, 2200);
     return () => clearInterval(interval);
   }, []);
   return (
-    <span className="inline-flex items-center gap-1.5">
-      {SCAN_STEPS[step]}
-      <span className="inline-flex gap-0.5 ml-0.5">
-        <span className="w-1 h-1 rounded-full bg-current animate-bounce" style={{ animationDelay: "0ms" }} />
-        <span className="w-1 h-1 rounded-full bg-current animate-bounce" style={{ animationDelay: "150ms" }} />
-        <span className="w-1 h-1 rounded-full bg-current animate-bounce" style={{ animationDelay: "300ms" }} />
+    <span className="inline-block min-w-[280px]">
+      <span className="inline-flex items-center gap-1.5">
+        {SCAN_STEPS[step]}
+        <span className="inline-flex gap-0.5 ml-0.5">
+          <span className="w-1 h-1 rounded-full bg-current animate-bounce" style={{ animationDelay: "0ms" }} />
+          <span className="w-1 h-1 rounded-full bg-current animate-bounce" style={{ animationDelay: "150ms" }} />
+          <span className="w-1 h-1 rounded-full bg-current animate-bounce" style={{ animationDelay: "300ms" }} />
+        </span>
       </span>
     </span>
   );
