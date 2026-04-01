@@ -13,6 +13,10 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "user_prompt and ai_response are required" }, { status: 400 });
   }
 
+  // Truncate to avoid 502 from Azure gateway on large payloads
+  const truncatedResponse = ai_response.length > 3000 ? ai_response.slice(0, 3000) + "..." : ai_response;
+  const truncatedPrompt = user_prompt.length > 1000 ? user_prompt.slice(0, 1000) + "..." : user_prompt;
+
   if (!ENCRYPTED_PROVIDER_KEY) {
     return Response.json({ error: "Hallucination check not configured (ZT_ENCRYPTED_PROVIDER_KEY missing)" }, { status: 501 });
   }
@@ -39,9 +43,9 @@ export async function POST(request: NextRequest) {
         provider_api_key: ENCRYPTED_PROVIDER_KEY,
         evaluator_model: "gpt-4.1",
         candidate_responses: [
-          { model: model || "claude-sonnet-4-20250514", response: ai_response },
+          { model: model || "claude-sonnet-4-20250514", response: truncatedResponse },
         ],
-        user_prompt,
+        user_prompt: truncatedPrompt,
         is_provider_api_key_encrypted: true,
         response_language: "EN",
       }),

@@ -816,12 +816,15 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
                   </div>
                 ) : (
                   message.role === "assistant" && !message.isStreaming && message.content && safetySettings.hallucination_check !== "allow" && message.id !== "welcome" && (
-                    <button
-                      onClick={() => runReliabilityCheck(message.id)}
-                      className="mt-2 text-[11px] text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer transition-colors"
-                    >
-                      Check Reliability
-                    </button>
+                    <div className="mt-2 flex items-center gap-2">
+                      <button
+                        onClick={() => runReliabilityCheck(message.id)}
+                        className="text-[11px] font-bold text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 cursor-pointer transition-colors"
+                      >
+                        Check Reliability &amp; Hallucination
+                      </button>
+                      <span className="text-[9px] text-gray-400/50">ZeroTrusted.ai</span>
+                    </div>
                   )
                 )}
               </div>
