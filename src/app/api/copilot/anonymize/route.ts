@@ -1,6 +1,9 @@
 import { NextRequest } from "next/server";
 import { authenticateRequest } from "@/shared/lib/auth";
-import { GUARDRAILS_URL, GUARDRAILS_TOKEN, PII_ENTITY_TYPES } from "@/shared/lib/guardrails";
+import { GUARDRAILS_URL, PII_ENTITY_TYPES } from "@/shared/lib/guardrails";
+
+// Anonymize endpoint uses the agents token per working curl
+const ANONYMIZE_TOKEN = "zt-a2cbc48179784f43bca1e853d5fd307e";
 
 export async function POST(request: NextRequest) {
   const user = await authenticateRequest();
@@ -15,17 +18,28 @@ export async function POST(request: NextRequest) {
     const formData = new FormData();
     formData.append("user_prompt", scanText);
     formData.append("pii_entity_types", PII_ENTITY_TYPES);
+    formData.append("anonymize_keywords", "");
+    formData.append("safeguard_keywords", "");
+    formData.append("uploaded_file", "");
+    formData.append("preserve_keywords", "");
     formData.append("response_language", "EN");
 
     const res = await fetch(`${GUARDRAILS_URL}/anonymize-sensitive-keywords`, {
       method: "POST",
-      headers: { "X-Custom-Token": GUARDRAILS_TOKEN },
+      headers: {
+        "X-Custom-Token": ANONYMIZE_TOKEN,
+        "accept": "application/json, text/plain, */*",
+        "origin": "https://dev.zerotrusted.ai",
+        "referer": "https://dev.zerotrusted.ai/",
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+      },
       body: formData,
     });
 
     if (!res.ok) {
       const errText = await res.text();
-      return Response.json({ error: `Anonymize failed: ${res.status} ${errText}` }, { status: 502 });
+      console.error("[Anonymize] ZTA API error:", res.status, errText.slice(0, 200));
+      return Response.json({ error: `Anonymize failed: ${res.status}` }, { status: 502 });
     }
 
     const data = await res.json();
