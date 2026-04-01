@@ -22,11 +22,18 @@ export async function POST(request: NextRequest) {
       method: "POST",
       headers: {
         "X-Custom-Token": HALLUCINATION_TOKEN,
-        "Content-Type": "application/json",
-        "accept": "application/json, text/plain, */*",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "accept-language": "en-US,en;q=0.9",
         "origin": "https://dev.zerotrusted.ai",
         "referer": "https://dev.zerotrusted.ai/",
-        "user-agent": "Mozilla/5.0 (compatible; AgenticBank/1.0)",
+        "sec-ch-ua": '"Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"Windows"',
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-site",
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
       },
       body: JSON.stringify({
         provider_api_key: ENCRYPTED_PROVIDER_KEY,
@@ -47,15 +54,36 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await res.json();
-    console.log("[Hallucination Check] ZTA response:", JSON.stringify(data).slice(0, 500));
 
-    // Extract reliability score from response
-    const score = data?.overall_score ?? data?.reliability_score ?? data?.score ?? 50;
+    // ZTA response format:
+    // { success: true, data: "{ \"model\": { \"rank\": \"1\", \"score\": \"99\", \"explanation\": \"...\" }, ... }" }
+    let score = 50;
+    let explanation = "";
+    const modelName = model || "claude-sonnet-4-20250514";
+
+    if (data.success && data.data) {
+      try {
+        const parsed = typeof data.data === "string" ? JSON.parse(data.data) : data.data;
+        // Find the score for our model, or take the first model's score
+        const modelResult = parsed[modelName] || Object.values(parsed).find(
+          (v: unknown) => typeof v === "object" && v !== null && "score" in (v as Record<string, unknown>)
+        );
+        if (modelResult && typeof modelResult === "object" && "score" in modelResult) {
+          const m = modelResult as { score: string; explanation?: string };
+          score = parseInt(m.score, 10) || 50;
+          explanation = m.explanation || "";
+        }
+      } catch {
+        // Failed to parse nested JSON — use default score
+      }
+    }
+
     const reliable = score >= 70;
 
     return Response.json({
       reliable,
-      score: Math.round(score),
+      score,
+      explanation,
       details: data,
     });
   } catch (err: unknown) {
