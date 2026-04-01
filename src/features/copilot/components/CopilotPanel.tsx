@@ -59,7 +59,7 @@ function ScanningSteps() {
     return () => clearInterval(interval);
   }, []);
   return (
-    <span className="inline-block min-w-[280px]">
+    <span className="inline-block">
       <span className="inline-flex items-center gap-1.5">
         {SCAN_STEPS[step]}
         <span className="inline-flex gap-0.5 ml-0.5">
@@ -780,14 +780,14 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
                           ? "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400"
                           : "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400"
                   }`}>
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="font-medium min-w-0 flex-1">
                         {message.validation.status === "scanning" && <ScanningSteps />}
                         {message.validation.status === "passed" && "Sensitive Data Validation: Passed"}
                         {message.validation.status === "failed" && "Sensitive Data Validation: Failed"}
                         {message.validation.status === "skipped" && "Sensitive Data Validation: Skipped"}
                       </span>
-                      <span className="text-[9px] opacity-60 ml-2">ZeroTrusted.ai</span>
+                      <span className="text-[9px] opacity-60 shrink-0 pt-0.5">ZeroTrusted.ai</span>
                     </div>
                   </div>
                 )}
