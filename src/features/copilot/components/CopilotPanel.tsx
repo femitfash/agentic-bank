@@ -33,6 +33,37 @@ interface CopilotPanelProps {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+const SCAN_STEPS = [
+  "Checking for SSN...",
+  "Checking for credit cards...",
+  "Checking for email addresses...",
+  "Checking for phone numbers...",
+  "Checking for names & addresses...",
+  "Checking for date of birth...",
+  "Checking for passport numbers...",
+  "Finalizing scan...",
+];
+
+function ScanningSteps() {
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setStep((s) => (s + 1) % SCAN_STEPS.length);
+    }, 800);
+    return () => clearInterval(interval);
+  }, []);
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {SCAN_STEPS[step]}
+      <span className="inline-flex gap-0.5 ml-0.5">
+        <span className="w-1 h-1 rounded-full bg-current animate-bounce" style={{ animationDelay: "0ms" }} />
+        <span className="w-1 h-1 rounded-full bg-current animate-bounce" style={{ animationDelay: "150ms" }} />
+        <span className="w-1 h-1 rounded-full bg-current animate-bounce" style={{ animationDelay: "300ms" }} />
+      </span>
+    </span>
+  );
+}
+
 function generateId(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
@@ -250,6 +281,8 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
   interface SafetySettings { pii_detection: SafetyMode; hallucination_check: HallucinationMode }
   const [safetySettings, setSafetySettings] = useState<SafetySettings>({ pii_detection: "warn", hallucination_check: "manual" });
   const [piiWarning, setPiiWarning] = useState<{ detections: { entity_type: string; text: string }[]; pendingText: string; pendingFile: { name: string; content: string } | null } | null>(null);
+  const [anonymizeResult, setAnonymizeResult] = useState<{ anonymized_text: string; original_text: string; mappings: { original: string; anonymized: string }[] } | null>(null);
+  const [anonymizing, setAnonymizing] = useState(false);
 
   useEffect(() => {
     try {
@@ -288,11 +321,11 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
   // ── Send Message ─────────────────────────────────────────────────────────
 
   const sendMessage = useCallback(
-    async (text: string, bypassPii = false) => {
-      if ((!text.trim() && !uploadedFile) || isLoading) return;
+    async (text: string, bypassPii = false, overrideFile?: { name: string; content: string } | null) => {
+      const currentFile = overrideFile !== undefined ? overrideFile : uploadedFile;
+      if ((!text.trim() && !currentFile) || isLoading) return;
 
       // Build message with file content if attached
-      const currentFile = uploadedFile;
       const displayText = text.trim() || (currentFile ? "Process this file" : "");
       let messageToSend = displayText;
       if (currentFile) {
@@ -360,6 +393,12 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
         setMessages((prev) => prev.map((m) =>
           m.id === assistantId ? { ...m, content: "", isStreaming: true, validation: validationResult } : m
         ));
+      } else if (bypassPii) {
+        // Bypass — user message already shown from warn flow, just add assistant
+        setMessages((prev) => [...prev, {
+          id: assistantId, role: "assistant", content: "", timestamp: new Date(), isStreaming: true,
+          validation: { status: "passed" },
+        }]);
       } else {
         // No PII check — add user + assistant messages directly
         setMessages((prev) => [...prev, userMsg, {
@@ -724,7 +763,7 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
                   </div>
                 )}
                 {message.validation && (
-                  <div className={`text-xs px-2.5 py-1.5 rounded-lg mb-2 font-medium ${
+                  <div className={`text-xs px-2.5 py-1.5 rounded-lg mb-2 ${
                     message.validation.status === "scanning"
                       ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400"
                       : message.validation.status === "passed"
@@ -733,10 +772,15 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
                           ? "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400"
                           : "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400"
                   }`}>
-                    {message.validation.status === "scanning" && (<span className="inline-flex items-center gap-1.5">Scanning for sensitive data<span className="inline-flex gap-0.5 ml-0.5"><span className="w-1 h-1 rounded-full bg-current animate-bounce" style={{ animationDelay: "0ms" }} /><span className="w-1 h-1 rounded-full bg-current animate-bounce" style={{ animationDelay: "150ms" }} /><span className="w-1 h-1 rounded-full bg-current animate-bounce" style={{ animationDelay: "300ms" }} /></span></span>)}
-                    {message.validation.status === "passed" && "Sensitive Data Validation: Passed"}
-                    {message.validation.status === "failed" && "Sensitive Data Validation: Failed"}
-                    {message.validation.status === "skipped" && "Sensitive Data Validation: Skipped"}
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">
+                        {message.validation.status === "scanning" && <ScanningSteps />}
+                        {message.validation.status === "passed" && "Sensitive Data Validation: Passed"}
+                        {message.validation.status === "failed" && "Sensitive Data Validation: Failed"}
+                        {message.validation.status === "skipped" && "Sensitive Data Validation: Skipped"}
+                      </span>
+                      <span className="text-[9px] opacity-60 ml-2">ZeroTrusted.ai</span>
+                    </div>
                   </div>
                 )}
                 <MarkdownText
@@ -874,47 +918,110 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
       {/* PII Warning Modal */}
       {piiWarning && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 rounded-2xl">
-          <div className="w-[90%] max-w-md bg-white dark:bg-gray-900 rounded-xl border border-red-300 dark:border-red-700 shadow-xl max-h-[80%] flex flex-col">
-            <div className="flex items-center gap-2 px-4 py-3 border-b border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 rounded-t-xl">
-              <span className="text-red-600 dark:text-red-400">&#9888;</span>
-              <span className="text-sm font-semibold text-red-700 dark:text-red-400">PII Detected in Content</span>
+          <div className="w-[90%] max-w-lg bg-white dark:bg-gray-900 rounded-xl border border-red-300 dark:border-red-700 shadow-xl max-h-[85%] flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 rounded-t-xl">
+              <div className="flex items-center gap-2">
+                <span className="text-red-600 dark:text-red-400">&#9888;</span>
+                <span className="text-sm font-semibold text-red-700 dark:text-red-400">PII Detected in Content</span>
+              </div>
+              <span className="text-[9px] text-red-400/60">ZeroTrusted.ai</span>
             </div>
             <div className="overflow-y-auto flex-1 p-4 space-y-3">
-              <p className="text-sm text-gray-700 dark:text-gray-300">
-                Sensitive personal information was found. This data has <strong>not</strong> been sent to the AI.
-              </p>
-              <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                {piiWarning.detections.map((d, i) => (
-                  <div key={i} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 text-xs">
-                    <span className="px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 font-semibold uppercase tracking-wider text-[10px]">
-                      {d.entity_type}
-                    </span>
-                    <span className="text-gray-500 font-mono truncate">
-                      {d.text.length > 4 ? d.text.slice(0, 2) + "****" + d.text.slice(-2) : "****"}
-                    </span>
+              {!anonymizeResult ? (
+                <>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">
+                    Sensitive personal information was found. This data has <strong>not</strong> been sent to the AI.
+                  </p>
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                    {piiWarning.detections.map((d, i) => (
+                      <div key={i} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 text-xs">
+                        <span className="px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 font-semibold uppercase tracking-wider text-[10px]">
+                          {d.entity_type}
+                        </span>
+                        <span className="text-gray-500 font-mono truncate">
+                          {d.text.length > 4 ? d.text.slice(0, 2) + "****" + d.text.slice(-2) : "****"}
+                        </span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-              <p className="text-[10px] text-gray-400 dark:text-gray-500">Powered by <a href="https://dev.zerotrusted.ai" target="_blank" rel="noopener noreferrer" className="underline">ZeroTrusted.ai</a></p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">
+                    PII has been replaced with anonymized values. Review the changes below:
+                  </p>
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {anonymizeResult.mappings.map((m, i) => (
+                      <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-xs">
+                        <span className="text-red-600 dark:text-red-400 line-through font-mono flex-1 truncate">{m.original}</span>
+                        <span className="text-gray-400">&rarr;</span>
+                        <span className="text-green-600 dark:text-green-400 font-mono flex-1 truncate">{m.anonymized}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
-            <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+            <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
               <button
-                onClick={() => setPiiWarning(null)}
+                onClick={() => { setPiiWarning(null); setAnonymizeResult(null); }}
                 className="px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer transition-colors"
               >
                 Cancel
               </button>
-              <button
-                onClick={() => {
-                  const pending = piiWarning;
-                  setPiiWarning(null);
-                  if (pending.pendingFile) setUploadedFile(pending.pendingFile);
-                  sendMessage(pending.pendingText, true);
-                }}
-                className="px-3 py-1.5 rounded-lg text-sm font-medium bg-amber-600 text-white hover:bg-amber-700 cursor-pointer transition-colors"
-              >
-                Send Anyway
-              </button>
+              <div className="flex gap-2">
+                {!anonymizeResult ? (
+                  <>
+                    <button
+                      onClick={async () => {
+                        setAnonymizing(true);
+                        try {
+                          const fullText = piiWarning.pendingFile
+                            ? `[Attached file: ${piiWarning.pendingFile.name}]\n${piiWarning.pendingFile.content}\n\n${piiWarning.pendingText}`
+                            : piiWarning.pendingText;
+                          const res = await fetch("/api/copilot/anonymize", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ text: fullText }),
+                          });
+                          const data = await res.json();
+                          if (res.ok && data.anonymized_text) {
+                            setAnonymizeResult(data);
+                          }
+                        } catch { /* ignore */ }
+                        finally { setAnonymizing(false); }
+                      }}
+                      disabled={anonymizing}
+                      className="px-3 py-1.5 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 cursor-pointer transition-colors disabled:opacity-50"
+                    >
+                      {anonymizing ? "Anonymizing..." : "Anonymize"}
+                    </button>
+                    <button
+                      onClick={() => {
+                        const pending = piiWarning;
+                        setPiiWarning(null);
+                        sendMessage(pending.pendingText, true, pending.pendingFile);
+                      }}
+                      className="px-3 py-1.5 rounded-lg text-sm font-medium bg-amber-600 text-white hover:bg-amber-700 cursor-pointer transition-colors"
+                    >
+                      Send Anyway
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => {
+                      const anonText = anonymizeResult.anonymized_text;
+                      setPiiWarning(null);
+                      setAnonymizeResult(null);
+                      // Send the anonymized content, bypassing PII check
+                      sendMessage(anonText, true, null);
+                    }}
+                    className="px-3 py-1.5 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 cursor-pointer transition-colors"
+                  >
+                    Use Anonymized Content
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
