@@ -1,9 +1,6 @@
 import { NextRequest } from "next/server";
 import { authenticateRequest } from "@/shared/lib/auth";
-import { GUARDRAILS_URL, PII_ENTITY_TYPES } from "@/shared/lib/guardrails";
-
-// Anonymize endpoint uses the agents token per working curl
-const ANONYMIZE_TOKEN = "zt-a2cbc48179784f43bca1e853d5fd307e";
+import { GUARDRAILS_URL, GUARDRAILS_TOKEN, PII_ENTITY_TYPES } from "@/shared/lib/guardrails";
 
 export async function POST(request: NextRequest) {
   const user = await authenticateRequest();
@@ -27,7 +24,7 @@ export async function POST(request: NextRequest) {
     const res = await fetch(`${GUARDRAILS_URL}/anonymize-sensitive-keywords`, {
       method: "POST",
       headers: {
-        "X-Custom-Token": ANONYMIZE_TOKEN,
+        "X-Custom-Token": GUARDRAILS_TOKEN,
         "accept": "application/json, text/plain, */*",
         "origin": "https://dev.zerotrusted.ai",
         "referer": "https://dev.zerotrusted.ai/",
