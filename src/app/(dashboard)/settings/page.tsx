@@ -32,6 +32,8 @@ type HallucinationMode = SafetyMode | "manual";
 interface SafetySettings {
   pii_detection: SafetyMode;
   hallucination_check: HallucinationMode;
+  guardrails_api_key?: string;
+  agents_api_key?: string;
 }
 const DEFAULT_SAFETY: SafetySettings = { pii_detection: "warn", hallucination_check: "manual" };
 const SAFETY_LS_KEY = "safety_settings";
@@ -69,7 +71,7 @@ export default function SettingsPage() {
   // Safety settings
   const [safetySettings, setSafetySettings] = useState<SafetySettings>(DEFAULT_SAFETY);
 
-  function updateSafety(key: keyof SafetySettings, value: SafetyMode | HallucinationMode) {
+  function updateSafety(key: keyof SafetySettings, value: SafetyMode | HallucinationMode | string | undefined) {
     setSafetySettings(prev => {
       const next = { ...prev, [key]: value };
       localStorage.setItem(SAFETY_LS_KEY, JSON.stringify(next));
@@ -355,6 +357,43 @@ export default function SettingsPage() {
                   </button>
                 );
               })}
+            </div>
+          </div>
+
+          {/* API Keys */}
+          <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">ZeroTrusted.ai API Keys</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              Configure your API keys for the ZeroTrusted.ai guardrails services. Leave blank to use the default keys.
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                  Guardrails API Key <span className="text-gray-400 dark:text-gray-500 font-normal">(PII detection)</span>
+                </label>
+                <input
+                  type="password"
+                  value={safetySettings.guardrails_api_key || ""}
+                  onChange={(e) => updateSafety("guardrails_api_key", e.target.value || "")}
+                  placeholder="zt-xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                  Agents API Key <span className="text-gray-400 dark:text-gray-500 font-normal">(Hallucination check &amp; Anonymization)</span>
+                </label>
+                <input
+                  type="password"
+                  value={safetySettings.agents_api_key || ""}
+                  onChange={(e) => updateSafety("agents_api_key", e.target.value || "")}
+                  placeholder="zt-xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 font-mono"
+                />
+              </div>
+              <p className="text-[11px] text-gray-400 dark:text-gray-500">
+                Keys are stored locally in your browser. Get your keys from <a href="https://dev.zerotrusted.ai" target="_blank" rel="noopener noreferrer" className="underline">dev.zerotrusted.ai</a>
+              </p>
             </div>
           </div>
 

@@ -286,7 +286,7 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
   // Safety settings
   type SafetyMode = "block" | "warn" | "allow";
   type HallucinationMode = SafetyMode | "manual";
-  interface SafetySettings { pii_detection: SafetyMode; hallucination_check: HallucinationMode }
+  interface SafetySettings { pii_detection: SafetyMode; hallucination_check: HallucinationMode; guardrails_api_key?: string; agents_api_key?: string }
   const [safetySettings, setSafetySettings] = useState<SafetySettings>({ pii_detection: "warn", hallucination_check: "manual" });
   const [piiWarning, setPiiWarning] = useState<{ detections: { entity_type: string; text: string }[]; pendingText: string; pendingFile: { name: string; content: string } | null } | null>(null);
   const [anonymizeResult, setAnonymizeResult] = useState<{ anonymized_text: string; original_text: string; mappings: { original: string; anonymized: string }[] } | null>(null);
@@ -366,7 +366,7 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
           const piiRes = await fetch("/api/copilot/pii-check", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text: messageToSend }),
+            body: JSON.stringify({ text: messageToSend, api_key: safetySettings.guardrails_api_key }),
           });
           const piiData = piiRes.ok ? await piiRes.json() : { has_pii: false, detections: [], error: true };
           console.log("[PII Check] Response:", piiRes.status, piiData);
@@ -493,7 +493,7 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
             const hRes = await fetch("/api/copilot/hallucination-check", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ user_prompt: displayText, ai_response: fullText }),
+              body: JSON.stringify({ user_prompt: displayText, ai_response: fullText, api_key: safetySettings.agents_api_key }),
             });
             const hData = await hRes.json();
 
@@ -588,7 +588,7 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
       const res = await fetch("/api/copilot/hallucination-check", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_prompt: userPrompt, ai_response: assistantMsg.content }),
+        body: JSON.stringify({ user_prompt: userPrompt, ai_response: assistantMsg.content, api_key: safetySettings.agents_api_key }),
       });
       const data = await res.json();
 
@@ -993,7 +993,7 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
                           const res = await fetch("/api/copilot/anonymize", {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ text: fullText }),
+                            body: JSON.stringify({ text: fullText, api_key: safetySettings.agents_api_key }),
                           });
                           const data = await res.json();
                           if (res.ok && data.anonymized_text) {

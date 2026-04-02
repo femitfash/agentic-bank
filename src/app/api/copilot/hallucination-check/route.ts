@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
   const user = await authenticateRequest();
   if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { user_prompt, ai_response, model } = await request.json();
+  const { user_prompt, ai_response, model, api_key } = await request.json();
   if (!user_prompt || !ai_response) {
     return Response.json({ error: "user_prompt and ai_response are required" }, { status: 400 });
   }
@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     const res = await fetch(`${HALLUCINATION_URL}?service=openai`, {
       method: "POST",
       headers: {
-        "X-Custom-Token": HALLUCINATION_TOKEN,
+        "X-Custom-Token": api_key || HALLUCINATION_TOKEN,
         "content-type": "application/json",
         "accept": "application/json",
         "accept-language": "en-US,en;q=0.9",

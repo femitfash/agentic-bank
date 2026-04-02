@@ -9,11 +9,12 @@ export async function POST(request: NextRequest) {
   const user = await authenticateRequest();
   if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { text } = await request.json();
+  const { text, api_key } = await request.json();
   if (!text) return Response.json({ error: "text is required" }, { status: 400 });
 
   try {
     const scanText = text.length > 10000 ? text.slice(0, 10000) : text;
+    const token = api_key || ANONYMIZE_TOKEN;
 
     const formData = new FormData();
     formData.append("pii_entity_types", ANONYMIZE_PII_TYPES);
@@ -27,7 +28,7 @@ export async function POST(request: NextRequest) {
     const res = await fetch(`${GUARDRAILS_URL}/anonymize-sensitive-keywords`, {
       method: "POST",
       headers: {
-        "X-Custom-Token": ANONYMIZE_TOKEN,
+        "X-Custom-Token": token,
         "accept": "application/json, text/plain, */*",
         "accept-language": "en-US,en;q=0.9",
         "origin": "https://dev.zerotrusted.ai",

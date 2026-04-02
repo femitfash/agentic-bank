@@ -6,12 +6,13 @@ export async function POST(request: NextRequest) {
   const user = await authenticateRequest();
   if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { text } = await request.json();
+  const { text, api_key } = await request.json();
   if (!text) return Response.json({ error: "text is required" }, { status: 400 });
 
   try {
     // Truncate to avoid overwhelming the API (scan first ~10KB)
     const scanText = text.length > 10000 ? text.slice(0, 10000) : text;
+    const token = api_key || GUARDRAILS_TOKEN;
 
     const formData = new FormData();
     formData.append("user_prompt", scanText);
@@ -19,7 +20,7 @@ export async function POST(request: NextRequest) {
 
     const res = await fetch(`${GUARDRAILS_URL}/detect-sensitive-keywords`, {
       method: "POST",
-      headers: { "X-Custom-Token": GUARDRAILS_TOKEN },
+      headers: { "X-Custom-Token": token },
       body: formData,
     });
 
