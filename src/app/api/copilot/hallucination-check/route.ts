@@ -25,11 +25,12 @@ export async function POST(request: NextRequest) {
     const res = await fetch(`${HALLUCINATION_URL}?service=openai`, {
       method: "POST",
       headers: {
-        "X-Custom-Token": api_key || HALLUCINATION_TOKEN,
-        "content-type": "application/json",
         "accept": "application/json",
         "accept-language": "en-US,en;q=0.9",
+        "X-Custom-Token": api_key || HALLUCINATION_TOKEN,
+        "content-type": "application/json",
         "origin": "https://dev.zerotrusted.ai",
+        "priority": "u=1, i",
         "referer": "https://dev.zerotrusted.ai/",
         "sec-ch-ua": '"Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"',
         "sec-ch-ua-mobile": "?0",
