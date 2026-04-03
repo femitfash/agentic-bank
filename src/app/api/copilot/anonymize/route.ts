@@ -10,6 +10,7 @@ export async function POST(request: NextRequest) {
   if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const { text, api_key } = await request.json();
+  console.log("[Anonymize] Request received, textLen:", text?.length, "hasApiKey:", !!api_key);
   if (!text) return Response.json({ error: "text is required" }, { status: 400 });
 
   try {
@@ -45,10 +46,12 @@ export async function POST(request: NextRequest) {
       body: formData,
     });
 
+    console.log("[Anonymize] ZTA response status:", res.status);
+
     if (!res.ok) {
       const errText = await res.text();
-      console.error("[Anonymize] ZTA API error:", res.status, errText.slice(0, 200));
-      return Response.json({ error: `Anonymize failed: ${res.status}` }, { status: 502 });
+      console.error("[Anonymize] ZTA API error:", res.status, errText.slice(0, 300));
+      return Response.json({ error: `Anonymize failed: ${res.status} - ${errText.slice(0, 100)}` }, { status: 502 });
     }
 
     const data = await res.json();
