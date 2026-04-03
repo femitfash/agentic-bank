@@ -2,6 +2,22 @@ import { NextRequest } from "next/server";
 import { authenticateRequest } from "@/shared/lib/auth";
 import { GUARDRAILS_URL, GUARDRAILS_TOKEN, PII_ENTITY_TYPES } from "@/shared/lib/guardrails";
 
+// Extend Vercel function timeout (default is 10s on hobby, 60s on pro)
+export const maxDuration = 30;
+
+async function callAnonymize(scanText: string, token: string): Promise<Response> {
+  const formData = new FormData();
+  formData.append("user_prompt", scanText);
+  formData.append("pii_entity_types", PII_ENTITY_TYPES);
+  formData.append("response_language", "EN");
+
+  return fetch(`${GUARDRAILS_URL}/anonymize-sensitive-keywords`, {
+    method: "POST",
+    headers: { "X-Custom-Token": token },
+    body: formData,
+  });
+}
+
 export async function POST(request: NextRequest) {
   const user = await authenticateRequest();
   if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
@@ -13,21 +29,16 @@ export async function POST(request: NextRequest) {
     const scanText = text.length > 10000 ? text.slice(0, 10000) : text;
     const token = api_key || GUARDRAILS_TOKEN;
 
-    // Use same FormData + minimal headers pattern as PII check (works on Vercel)
-    const formData = new FormData();
-    formData.append("user_prompt", scanText);
-    formData.append("pii_entity_types", PII_ENTITY_TYPES);
-    formData.append("response_language", "EN");
-
-    const res = await fetch(`${GUARDRAILS_URL}/anonymize-sensitive-keywords`, {
-      method: "POST",
-      headers: { "X-Custom-Token": token },
-      body: formData,
-    });
+    // Try up to 2 times (ZTA endpoint can be intermittent)
+    let res = await callAnonymize(scanText, token);
+    if (!res.ok) {
+      console.error("[Anonymize] First attempt failed:", res.status, "— retrying...");
+      res = await callAnonymize(scanText, token);
+    }
 
     if (!res.ok) {
       const errText = await res.text();
-      console.error("[Anonymize] ZTA API error:", res.status, errText.slice(0, 300));
+      console.error("[Anonymize] ZTA API error after retry:", res.status, errText.slice(0, 300));
       return Response.json({ error: `Anonymize failed: ${res.status}` }, { status: 502 });
     }
 
