@@ -490,12 +490,14 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
           );
 
           try {
+            console.log("[Hallucination Check] Sending auto-check, promptLen:", displayText.length, "responseLen:", fullText.length);
             const hRes = await fetch("/api/copilot/hallucination-check", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ user_prompt: displayText, ai_response: fullText, api_key: safetySettings.agents_api_key }),
             });
             const hData = await hRes.json();
+            console.log("[Hallucination Check] Auto-check response:", hRes.status, hData);
 
             if (hRes.ok) {
               const reliable = hData.reliable !== false;
@@ -585,12 +587,14 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
     );
 
     try {
+      console.log("[Hallucination Check] Sending on-demand check, promptLen:", userPrompt.length, "responseLen:", assistantMsg.content.length);
       const res = await fetch("/api/copilot/hallucination-check", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ user_prompt: userPrompt, ai_response: assistantMsg.content, api_key: safetySettings.agents_api_key }),
       });
       const data = await res.json();
+      console.log("[Hallucination Check] On-demand response:", res.status, data);
 
       if (res.ok) {
         const reliable = data.reliable !== false;

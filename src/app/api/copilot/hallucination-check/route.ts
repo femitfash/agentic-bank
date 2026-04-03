@@ -8,8 +8,21 @@ export async function POST(request: NextRequest) {
   const user = await authenticateRequest();
   if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { user_prompt, ai_response, model, api_key } = await request.json();
+  const body = await request.json();
+  const { user_prompt, ai_response, model, api_key } = body;
+
+  console.log("[Hallucination Check] Request received:", {
+    hasUserPrompt: !!user_prompt,
+    promptLength: user_prompt?.length,
+    hasAiResponse: !!ai_response,
+    responseLength: ai_response?.length,
+    model,
+    hasApiKey: !!api_key,
+    hasEncryptedKey: !!ENCRYPTED_PROVIDER_KEY,
+  });
+
   if (!user_prompt || !ai_response) {
+    console.error("[Hallucination Check] Missing fields:", { user_prompt: !!user_prompt, ai_response: !!ai_response });
     return Response.json({ error: "user_prompt and ai_response are required" }, { status: 400 });
   }
 
@@ -18,16 +31,38 @@ export async function POST(request: NextRequest) {
   const truncatedPrompt = user_prompt.length > 1000 ? user_prompt.slice(0, 1000) + "..." : user_prompt;
 
   if (!ENCRYPTED_PROVIDER_KEY) {
+    console.error("[Hallucination Check] ZT_ENCRYPTED_PROVIDER_KEY is not set in env");
     return Response.json({ error: "Hallucination check not configured (ZT_ENCRYPTED_PROVIDER_KEY missing)" }, { status: 501 });
   }
 
   try {
-    const res = await fetch(`${HALLUCINATION_URL}?service=openai`, {
+    const requestUrl = `${HALLUCINATION_URL}?service=openai`;
+    const requestBody = {
+      provider_api_key: ENCRYPTED_PROVIDER_KEY,
+      evaluator_model: "gpt-4.1",
+      candidate_responses: [
+        { model: model || "claude-sonnet-4-20250514", response: truncatedResponse },
+      ],
+      user_prompt: truncatedPrompt,
+      is_provider_api_key_encrypted: true,
+      response_language: "EN",
+    };
+    const token = api_key || HALLUCINATION_TOKEN;
+
+    console.log("[Hallucination Check] Sending to ZTA:", {
+      url: requestUrl,
+      token: token.slice(0, 10) + "...",
+      bodySize: JSON.stringify(requestBody).length,
+      promptLength: truncatedPrompt.length,
+      responseLength: truncatedResponse.length,
+    });
+
+    const res = await fetch(requestUrl, {
       method: "POST",
       headers: {
         "accept": "application/json",
         "accept-language": "en-US,en;q=0.9",
-        "X-Custom-Token": api_key || HALLUCINATION_TOKEN,
+        "X-Custom-Token": token,
         "content-type": "application/json",
         "origin": "https://dev.zerotrusted.ai",
         "priority": "u=1, i",
@@ -40,25 +75,19 @@ export async function POST(request: NextRequest) {
         "sec-fetch-site": "same-site",
         "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
       },
-      body: JSON.stringify({
-        provider_api_key: ENCRYPTED_PROVIDER_KEY,
-        evaluator_model: "gpt-4.1",
-        candidate_responses: [
-          { model: model || "claude-sonnet-4-20250514", response: truncatedResponse },
-        ],
-        user_prompt: truncatedPrompt,
-        is_provider_api_key_encrypted: true,
-        response_language: "EN",
-      }),
+      body: JSON.stringify(requestBody),
     });
+
+    console.log("[Hallucination Check] ZTA response status:", res.status);
 
     if (!res.ok) {
       const errText = await res.text();
-      console.error("[Hallucination Check] ZTA API error:", res.status, errText);
-      return Response.json({ error: `Reliability check failed: ${res.status} ${errText}` }, { status: 502 });
+      console.error("[Hallucination Check] ZTA API error:", res.status, errText.slice(0, 300));
+      return Response.json({ error: `Reliability check failed: ${res.status} ${errText.slice(0, 200)}` }, { status: 502 });
     }
 
     const data = await res.json();
+    console.log("[Hallucination Check] ZTA response data:", JSON.stringify(data).slice(0, 300));
 
     // ZTA response format:
     // { success: true, data: "{ \"model\": { \"rank\": \"1\", \"score\": \"99\", \"explanation\": \"...\" }, ... }" }
