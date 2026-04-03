@@ -17,33 +17,25 @@ export async function POST(request: NextRequest) {
     const scanText = text.length > 10000 ? text.slice(0, 10000) : text;
     const token = api_key || ANONYMIZE_TOKEN;
 
-    const formData = new FormData();
-    formData.append("pii_entity_types", ANONYMIZE_PII_TYPES);
-    formData.append("user_prompt", scanText);
-    formData.append("anonymize_keywords", "");
-    formData.append("safeguard_keywords", "hacking");
-    formData.append("uploaded_file", "");
-    formData.append("preserve_keywords", "");
-    formData.append("response_language", "EN");
+    // Use URLSearchParams instead of FormData for Vercel serverless compatibility
+    const params = new URLSearchParams();
+    params.append("pii_entity_types", ANONYMIZE_PII_TYPES);
+    params.append("user_prompt", scanText);
+    params.append("anonymize_keywords", "");
+    params.append("safeguard_keywords", "hacking");
+    params.append("preserve_keywords", "");
+    params.append("response_language", "EN");
 
     const res = await fetch(`${GUARDRAILS_URL}/anonymize-sensitive-keywords`, {
       method: "POST",
       headers: {
         "X-Custom-Token": token,
-        "accept": "application/json, text/plain, */*",
-        "accept-language": "en-US,en;q=0.9",
+        "content-type": "application/x-www-form-urlencoded",
+        "accept": "application/json",
         "origin": "https://dev.zerotrusted.ai",
-        "priority": "u=1, i",
         "referer": "https://dev.zerotrusted.ai/",
-        "sec-ch-ua": '"Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"',
-        "sec-ch-ua-mobile": "?0",
-        "sec-ch-ua-platform": '"Windows"',
-        "sec-fetch-dest": "empty",
-        "sec-fetch-mode": "cors",
-        "sec-fetch-site": "same-site",
-        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
       },
-      body: formData,
+      body: params.toString(),
     });
 
     console.log("[Anonymize] ZTA response status:", res.status);
