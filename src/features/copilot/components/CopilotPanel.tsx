@@ -78,6 +78,29 @@ function generateId(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
+// Replace anonymized values with originals in any string/object using mappings
+function deanonymizeValue(
+  value: unknown,
+  mappings: { original: string; anonymized: string }[]
+): unknown {
+  if (typeof value === "string") {
+    let result = value;
+    for (const m of mappings) {
+      result = result.split(m.anonymized).join(m.original);
+    }
+    return result;
+  }
+  if (Array.isArray(value)) return value.map((v) => deanonymizeValue(v, mappings));
+  if (typeof value === "object" && value !== null) {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) {
+      out[k] = deanonymizeValue(v, mappings);
+    }
+    return out;
+  }
+  return value;
+}
+
 const ACTION_LABELS: Record<string, string> = {
   create_customer: "Register Customer",
   open_account: "Open Account",
@@ -132,13 +155,18 @@ function ActionCard({
       <div className="space-y-1.5 mb-3">
         {Object.entries(action.input).map(([key, value]) => {
           if (value === null || value === undefined) return null;
-          const display = typeof value === "object" ? JSON.stringify(value) : String(value);
+          const display = typeof value === "object" ? JSON.stringify(value, null, 2) : String(value);
+          const isLong = display.length > 60 || display.includes("\n");
           return (
-            <div key={key} className="flex text-sm">
+            <div key={key} className={isLong ? "text-sm" : "flex text-sm"}>
               <span className="text-gray-400 dark:text-gray-500 w-32 shrink-0 capitalize">
                 {key.replace(/_/g, " ")}:
               </span>
-              <span className="font-medium text-gray-700 dark:text-gray-300">{display}</span>
+              {isLong ? (
+                <pre className="mt-1 font-medium text-gray-700 dark:text-gray-300 text-xs bg-gray-50 dark:bg-gray-900 rounded-lg p-2 overflow-x-auto max-h-32 overflow-y-auto whitespace-pre-wrap break-all">{display}</pre>
+              ) : (
+                <span className="font-medium text-gray-700 dark:text-gray-300 break-words min-w-0">{display}</span>
+              )}
             </div>
           );
         })}
@@ -585,9 +613,15 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
 
             if (dRes.ok && dData.deanonymized_text) {
               setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantId ? { ...m, content: dData.deanonymized_text, deanonymized: { text: dData.deanonymized_text } } : m
-                )
+                prev.map((m) => {
+                  if (m.id !== assistantId) return m;
+                  // Deanonymize action inputs too (tool call parameters contain anonymized values)
+                  const deanonActions = m.actions?.map((a) => ({
+                    ...a,
+                    input: deanonymizeValue(a.input, anonMappings) as Record<string, unknown>,
+                  }));
+                  return { ...m, content: dData.deanonymized_text, deanonymized: { text: dData.deanonymized_text }, ...(deanonActions ? { actions: deanonActions } : {}) };
+                })
               );
             } else {
               // Deanonymize failed — clear indicator, keep anonymized content
