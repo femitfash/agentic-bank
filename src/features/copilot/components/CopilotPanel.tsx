@@ -293,7 +293,6 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
   const [piiWarning, setPiiWarning] = useState<{ detections: { entity_type: string; text: string }[]; pendingText: string; pendingFile: { name: string; content: string } | null } | null>(null);
   const [anonymizeResult, setAnonymizeResult] = useState<{ anonymized_text: string; original_text: string; mappings: { original: string; anonymized: string }[] } | null>(null);
   const [anonymizing, setAnonymizing] = useState(false);
-  const [pendingAnonymizeMappings, setPendingAnonymizeMappings] = useState<{ original: string; anonymized: string }[] | null>(null);
 
   useEffect(() => {
     try {
@@ -332,7 +331,7 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
   // ── Send Message ─────────────────────────────────────────────────────────
 
   const sendMessage = useCallback(
-    async (text: string, bypassPii = false, overrideFile?: { name: string; content: string } | null) => {
+    async (text: string, bypassPii = false, overrideFile?: { name: string; content: string } | null, anonMappings?: { original: string; anonymized: string }[]) => {
       const currentFile = overrideFile !== undefined ? overrideFile : uploadedFile;
       if ((!text.trim() && !currentFile) || isLoading) return;
 
@@ -406,8 +405,6 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
         ));
       } else if (bypassPii) {
         // Bypass — user message already shown from warn flow, just add assistant
-        const anonMappings = pendingAnonymizeMappings;
-        if (anonMappings) setPendingAnonymizeMappings(null);
         setMessages((prev) => [...prev, {
           id: assistantId, role: "assistant", content: "", timestamp: new Date(), isStreaming: true,
           validation: { status: "passed" },
@@ -557,7 +554,7 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
         setIsLoading(false);
       }
     },
-    [isLoading, messages, context, customerId, uploadedFile, safetySettings, pendingAnonymizeMappings]
+    [isLoading, messages, context, customerId, uploadedFile, safetySettings]
   );
 
   const handleSubmit = useCallback(
@@ -1111,9 +1108,8 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
                       setPiiWarning(null);
                       setAnonymizeResult(null);
                       // Send the anonymized content, bypassing PII check
-                      // Store mappings so we can deanonymize the AI response later
-                      setPendingAnonymizeMappings(mappings);
-                      sendMessage(anonText, true, null);
+                      // Pass mappings directly so the AI response can be deanonymized later
+                      sendMessage(anonText, true, null, mappings);
                     }}
                     className="px-3 py-1.5 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 cursor-pointer transition-colors"
                   >
