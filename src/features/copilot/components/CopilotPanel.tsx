@@ -78,8 +78,35 @@ function generateId(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
+// Build expanded mappings: for multi-word values like "Nicholas Compton" -> "John Doe",
+// also add word-level mappings "Nicholas" -> "John", "Compton" -> "Doe" so that fields
+// like first_name/last_name that the LLM splits get deanonymized too.
+function expandMappings(mappings: { original: string; anonymized: string }[]) {
+  const expanded: { original: string; anonymized: string }[] = [...mappings];
+  for (const m of mappings) {
+    const anonWords = m.anonymized.split(/\s+/);
+    const origWords = m.original.split(/\s+/);
+    if (anonWords.length > 1 && anonWords.length === origWords.length) {
+      for (let i = 0; i < anonWords.length; i++) {
+        if (anonWords[i] !== origWords[i]) {
+          expanded.push({ original: origWords[i], anonymized: anonWords[i] });
+        }
+      }
+    }
+  }
+  return expanded;
+}
+
 // Replace anonymized values with originals in any string/object using mappings
 function deanonymizeValue(
+  value: unknown,
+  mappings: { original: string; anonymized: string }[]
+): unknown {
+  const allMappings = expandMappings(mappings);
+  return deanonymizeRecursive(value, allMappings);
+}
+
+function deanonymizeRecursive(
   value: unknown,
   mappings: { original: string; anonymized: string }[]
 ): unknown {
@@ -90,11 +117,11 @@ function deanonymizeValue(
     }
     return result;
   }
-  if (Array.isArray(value)) return value.map((v) => deanonymizeValue(v, mappings));
+  if (Array.isArray(value)) return value.map((v) => deanonymizeRecursive(v, mappings));
   if (typeof value === "object" && value !== null) {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value)) {
-      out[k] = deanonymizeValue(v, mappings);
+      out[k] = deanonymizeRecursive(v, mappings);
     }
     return out;
   }
