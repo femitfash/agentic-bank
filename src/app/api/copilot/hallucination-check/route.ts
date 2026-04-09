@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
       headers: {
         "accept": "application/json",
         "accept-language": "en-US,en;q=0.9",
-        "X-Custom-Token": token,
+        "X-API-Key": token,
         "content-type": "application/json",
         "origin": "https://dev.zerotrusted.ai",
         "priority": "u=1, i",

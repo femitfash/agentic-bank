@@ -13,7 +13,7 @@ async function callAnonymize(scanText: string, token: string): Promise<Response>
 
   return fetch(`${GUARDRAILS_URL}/anonymize-sensitive-keywords`, {
     method: "POST",
-    headers: { "X-Custom-Token": token },
+    headers: { "X-API-Key": token },
     body: formData,
   });
 }

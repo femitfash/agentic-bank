@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
 
     const res = await fetch(`${GUARDRAILS_URL}/detect-sensitive-keywords`, {
       method: "POST",
-      headers: { "X-Custom-Token": token },
+      headers: { "X-API-Key": token },
       body: formData,
     });
 

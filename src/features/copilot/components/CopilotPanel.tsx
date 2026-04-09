@@ -14,6 +14,8 @@ interface Message {
   attachedFile?: string;
   reliability?: { score: number; reliable: boolean; checking?: boolean; explanation?: string };
   validation?: { status: "scanning" | "passed" | "failed" | "skipped"; details?: string };
+  anonymizeMappings?: { original: string; anonymized: string }[];
+  deanonymized?: { text: string; checking?: boolean };
 }
 
 interface CopilotAction {
@@ -291,6 +293,7 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
   const [piiWarning, setPiiWarning] = useState<{ detections: { entity_type: string; text: string }[]; pendingText: string; pendingFile: { name: string; content: string } | null } | null>(null);
   const [anonymizeResult, setAnonymizeResult] = useState<{ anonymized_text: string; original_text: string; mappings: { original: string; anonymized: string }[] } | null>(null);
   const [anonymizing, setAnonymizing] = useState(false);
+  const [pendingAnonymizeMappings, setPendingAnonymizeMappings] = useState<{ original: string; anonymized: string }[] | null>(null);
 
   useEffect(() => {
     try {
@@ -403,9 +406,12 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
         ));
       } else if (bypassPii) {
         // Bypass — user message already shown from warn flow, just add assistant
+        const anonMappings = pendingAnonymizeMappings;
+        if (anonMappings) setPendingAnonymizeMappings(null);
         setMessages((prev) => [...prev, {
           id: assistantId, role: "assistant", content: "", timestamp: new Date(), isStreaming: true,
           validation: { status: "passed" },
+          ...(anonMappings ? { anonymizeMappings: anonMappings } : {}),
         }]);
       } else {
         // No PII check — add user + assistant messages directly
@@ -551,7 +557,7 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
         setIsLoading(false);
       }
     },
-    [isLoading, messages, context, customerId, uploadedFile, safetySettings]
+    [isLoading, messages, context, customerId, uploadedFile, safetySettings, pendingAnonymizeMappings]
   );
 
   const handleSubmit = useCallback(
@@ -619,6 +625,52 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
       );
     }
   }, [messages]);
+
+  // On-demand deanonymize for an assistant message that was generated from anonymized input
+  const runDeanonymize = useCallback(async (messageId: string) => {
+    const msg = messages.find((m) => m.id === messageId);
+    if (!msg || !msg.anonymizeMappings || !msg.content) return;
+
+    // Show checking indicator
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === messageId ? { ...m, deanonymized: { text: "", checking: true } } : m
+      )
+    );
+
+    try {
+      const res = await fetch("/api/copilot/deanonymize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: msg.content,
+          mappings: msg.anonymizeMappings,
+          api_key: safetySettings.guardrails_api_key,
+        }),
+      });
+      const data = await res.json();
+
+      if (res.ok && data.deanonymized_text) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === messageId ? { ...m, deanonymized: { text: data.deanonymized_text } } : m
+          )
+        );
+      } else {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === messageId ? { ...m, deanonymized: undefined } : m
+          )
+        );
+      }
+    } catch {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId ? { ...m, deanonymized: undefined } : m
+        )
+      );
+    }
+  }, [messages, safetySettings.guardrails_api_key]);
 
   // ── Execute / Reject Actions ─────────────────────────────────────────────
 
@@ -831,6 +883,35 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
                     </div>
                   )
                 )}
+                {/* Deanonymize button / result */}
+                {message.role === "assistant" && !message.isStreaming && message.content && message.anonymizeMappings && message.id !== "welcome" && (
+                  message.deanonymized ? (
+                    <div className={`mt-2 text-xs px-2.5 py-1.5 rounded-lg font-medium ${
+                      message.deanonymized.checking
+                        ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400"
+                        : "bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400"
+                    }`}>
+                      {message.deanonymized.checking
+                        ? (<span className="inline-flex items-center gap-1.5">Deanonymizing<span className="inline-flex gap-0.5 ml-0.5"><span className="w-1 h-1 rounded-full bg-current animate-bounce" style={{ animationDelay: "0ms" }} /><span className="w-1 h-1 rounded-full bg-current animate-bounce" style={{ animationDelay: "150ms" }} /><span className="w-1 h-1 rounded-full bg-current animate-bounce" style={{ animationDelay: "300ms" }} /></span></span>)
+                        : (
+                          <details>
+                            <summary className="cursor-pointer">Deanonymized Response (click to expand)</summary>
+                            <div className="mt-2 whitespace-pre-wrap text-gray-800 dark:text-gray-200">{message.deanonymized.text}</div>
+                          </details>
+                        )}
+                    </div>
+                  ) : (
+                    <div className="mt-2 flex items-center gap-2">
+                      <button
+                        onClick={() => runDeanonymize(message.id)}
+                        className="text-[11px] font-bold text-purple-500 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 cursor-pointer transition-colors"
+                      >
+                        Deanonymize Response
+                      </button>
+                      <span className="text-[9px] text-gray-400/50">ZeroTrusted.ai</span>
+                    </div>
+                  )
+                )}
               </div>
             </div>
 
@@ -1026,9 +1107,12 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
                   <button
                     onClick={() => {
                       const anonText = anonymizeResult.anonymized_text;
+                      const mappings = anonymizeResult.mappings;
                       setPiiWarning(null);
                       setAnonymizeResult(null);
                       // Send the anonymized content, bypassing PII check
+                      // Store mappings so we can deanonymize the AI response later
+                      setPendingAnonymizeMappings(mappings);
                       sendMessage(anonText, true, null);
                     }}
                     className="px-3 py-1.5 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 cursor-pointer transition-colors"

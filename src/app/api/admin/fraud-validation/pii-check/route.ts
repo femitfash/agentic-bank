@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     const res = await fetch(endpoint, {
       method: "POST",
       headers: {
-        "X-Custom-Token": GUARDRAILS_TOKEN,
+        "X-API-Key": GUARDRAILS_TOKEN,
       },
       body: formData,
     });
