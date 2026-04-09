@@ -434,9 +434,18 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
       setIsLoading(true);
 
       try {
-        const history = messages
-          .filter((m) => m.id !== "welcome")
-          .map((m) => ({ role: m.role, content: m.content }));
+        // Build history from current messages. When bypassing with anonymized content,
+        // replace the last user message to ensure original PII never reaches the LLM.
+        let historyMessages = messages.filter((m) => m.id !== "welcome");
+        if (bypassPii && anonMappings) {
+          const lastUserIdx = historyMessages.findLastIndex((m) => m.role === "user");
+          if (lastUserIdx >= 0) {
+            historyMessages = historyMessages.map((m, i) =>
+              i === lastUserIdx ? { ...m, content: displayText } : m
+            );
+          }
+        }
+        const history = historyMessages.map((m) => ({ role: m.role, content: m.content }));
 
         const response = await fetch("/api/copilot", {
           method: "POST",
