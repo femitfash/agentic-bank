@@ -404,12 +404,26 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
           m.id === assistantId ? { ...m, content: "", isStreaming: true, validation: validationResult } : m
         ));
       } else if (bypassPii) {
-        // Bypass — user message already shown from warn flow, just add assistant
-        setMessages((prev) => [...prev, {
-          id: assistantId, role: "assistant", content: "", timestamp: new Date(), isStreaming: true,
-          validation: { status: "passed" },
-          ...(anonMappings ? { anonymizeMappings: anonMappings } : {}),
-        }]);
+        // Bypass — user message already shown from warn flow, just add assistant.
+        // If we have anonymized mappings, replace the original user message content
+        // with the anonymized text so sensitive data is NOT sent in conversation history.
+        setMessages((prev) => {
+          const updated = anonMappings ? (() => {
+            // Find the last user message and replace its content with the anonymized text
+            const lastUserIdx = prev.findLastIndex((m) => m.role === "user");
+            if (lastUserIdx >= 0) {
+              const copy = [...prev];
+              copy[lastUserIdx] = { ...copy[lastUserIdx], content: displayText };
+              return copy;
+            }
+            return prev;
+          })() : prev;
+          return [...updated, {
+            id: assistantId, role: "assistant", content: "", timestamp: new Date(), isStreaming: true,
+            validation: { status: "passed" },
+            ...(anonMappings ? { anonymizeMappings: anonMappings } : {}),
+          }];
+        });
       } else {
         // No PII check — add user + assistant messages directly
         setMessages((prev) => [...prev, userMsg, {
