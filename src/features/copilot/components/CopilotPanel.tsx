@@ -1,6 +1,20 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
+
+// ── Route mapping for post-action redirect ──────────────────────────────────
+
+const ACTION_ROUTES: Record<string, string> = {
+  upload_transactions: "/transactions",
+  deposit: "/transactions",
+  withdraw: "/transactions",
+  transfer: "/transactions",
+  create_customer: "/customers",
+  open_account: "/accounts",
+  update_account_status: "/accounts",
+  seed_test_data: "/dashboard",
+};
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -136,6 +150,7 @@ const ACTION_LABELS: Record<string, string> = {
   transfer: "Transfer Funds",
   seed_test_data: "Generate Test Data",
   update_account_status: "Update Account Status",
+  upload_transactions: "Upload Transactions",
 };
 
 // ── Action Card ──────────────────────────────────────────────────────────────
@@ -325,6 +340,7 @@ function renderInline(text: string, isUser: boolean): React.ReactNode {
 
 export function CopilotPanel({ onClose, context, customerId, customerName }: CopilotPanelProps) {
   const isCustomer = Boolean(customerId);
+  const router = useRouter();
 
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -836,6 +852,12 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, successMsg]);
+
+      // Navigate to the relevant page after successful action
+      const targetRoute = ACTION_ROUTES[action.name];
+      if (targetRoute && !isCustomer && window.location.pathname !== targetRoute) {
+        router.push(targetRoute);
+      }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Action failed";
       setMessages((prev) => [
@@ -866,6 +888,23 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
     );
   }, []);
 
+  const clearChat = useCallback(() => {
+    setMessages([
+      {
+        id: "welcome",
+        role: "assistant",
+        content: isCustomer
+          ? `**Banking Assistant**\n\nHi${customerName ? ` ${customerName}` : ""}! I can help you check balances, view transactions, make deposits, withdrawals, and transfers.\n\nTry a suggestion below, or ask me anything:`
+          : "**Banking Copilot**\n\nI can help you manage customers, accounts, and transactions. Just type what you need in plain English.\n\nTry clicking a suggestion below, or type your own request:",
+        timestamp: new Date(),
+      },
+    ]);
+    setInput("");
+    setUploadedFile(null);
+    setPiiWarning(null);
+    setAnonymizeResult(null);
+  }, [isCustomer, customerName]);
+
   // ── Render ───────────────────────────────────────────────────────────────
 
   return (
@@ -878,12 +917,23 @@ export function CopilotPanel({ onClose, context, customerId, customerName }: Cop
           </span>
           <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{isCustomer ? "Banking Assistant" : "Banking Copilot"}</span>
         </div>
-        <button
-          onClick={onClose}
-          className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors cursor-pointer"
-        >
-          &#x2715;
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={clearChat}
+            className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors cursor-pointer"
+            title="Clear chat"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 6h18"/><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+            </svg>
+          </button>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors cursor-pointer"
+          >
+            &#x2715;
+          </button>
+        </div>
       </div>
 
       {/* Messages */}

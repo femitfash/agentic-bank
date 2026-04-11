@@ -536,6 +536,81 @@ export async function executeWriteTool(
       };
     }
 
+    case "upload_transactions": {
+      const account = await resolveAccount(admin, String(input.account_id), organizationId);
+      if (!account) return { success: false, message: "Account not found", error: "Account not found", status: 404 };
+      if (account.status !== "active") return { success: false, message: `Account is ${account.status}`, error: `Account is ${account.status}`, status: 400 };
+
+      const transactions = input.transactions as Array<{
+        type: string; amount: number; description?: string; created_at?: string;
+      }>;
+      if (!transactions || transactions.length === 0) {
+        return { success: false, message: "No transactions provided", error: "Empty transaction list", status: 400 };
+      }
+      if (transactions.length > 100) {
+        return { success: false, message: "Maximum 100 transactions per upload", error: "Too many transactions", status: 400 };
+      }
+
+      // Sort by created_at for correct balance tracking
+      const sorted = [...transactions].sort((a, b) => {
+        const da = a.created_at ? new Date(a.created_at).getTime() : Date.now();
+        const db = b.created_at ? new Date(b.created_at).getTime() : Date.now();
+        return da - db;
+      });
+
+      let runningBalance = Number(account.balance);
+      let insertedCount = 0;
+
+      for (const txn of sorted) {
+        const amount = Number(txn.amount);
+        const balanceBefore = runningBalance;
+        const isCredit = txn.type === "deposit" || txn.type === "transfer_in";
+        const balanceAfter = isCredit ? runningBalance + amount : runningBalance - amount;
+        runningBalance = balanceAfter;
+
+        const txnId = `TXN-${(Date.now() + insertedCount).toString(36).toUpperCase()}`;
+        const reference = generateReference();
+
+        const { error } = await admin.from("transactions").insert({
+          organization_id: organizationId,
+          transaction_id: txnId,
+          account_id: account.id,
+          type: txn.type,
+          amount,
+          balance_before: balanceBefore,
+          balance_after: balanceAfter,
+          reference,
+          description: txn.description || `Imported ${txn.type}`,
+          status: "completed",
+          created_by: createdBy(user),
+          ...(txn.created_at ? { created_at: txn.created_at } : {}),
+        });
+
+        if (!error) insertedCount++;
+      }
+
+      // Update account balance to final running balance
+      await admin.from("accounts").update({ balance: runningBalance }).eq("id", account.id);
+
+      void logAudit({
+        organizationId,
+        userId: user.id,
+        action: "transaction.bulk_upload",
+        entityType: "transaction",
+        entityId: "batch",
+        newValues: { account_id: account.id, count: insertedCount, final_balance: runningBalance },
+      });
+
+      invalidateBankContext(organizationId);
+      await bumpWriteCount(admin, organizationId);
+
+      return {
+        success: true,
+        result: { transactions_imported: insertedCount, final_balance: runningBalance },
+        message: `Imported **${insertedCount}** transactions into account ${account.account_number}. New balance: **$${runningBalance.toFixed(2)}**.`,
+      };
+    }
+
     default:
       return { success: false, message: `Unknown action: ${name}`, error: `Unknown action: ${name}`, status: 400 };
   }

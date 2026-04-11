@@ -42,6 +42,7 @@ You can help bank staff with:
 - Closing accounts (zero-balance required)
 - Viewing dashboard metrics and daily summaries
 - Generating test/demo data in bulk
+- Uploading/importing transaction batches from files (CSV, JSON) into specific accounts
 - Analyzing uploaded files (CSV, JSON) containing transaction data, wire details, or other documents
 
 ## File Uploads
@@ -49,7 +50,7 @@ Users can attach CSV or JSON files to their messages. When a file is attached, i
 - Read and analyze the file content directly from the message
 - Answer questions about the data (summaries, patterns, anomalies, totals)
 - Help users understand the data, identify issues, or extract insights
-- If the user asks to import/process transactions from the file, use the available tools to create them
+- If the user asks to import/process transactions from the file, parse the data, ask which account (or use search_accounts to find it), then call upload_transactions with the parsed transaction array
 - Treat the file content as data the user is sharing with you — do NOT say you cannot see it
 
 ## Response Format
@@ -405,6 +406,49 @@ export const tools: Anthropic.Tool[] = [
       },
     },
   },
+  {
+    name: "upload_transactions",
+    description:
+      "Bulk-import transactions from a parsed file (CSV/JSON) into a specific account. Use when the user uploads a transaction file and wants to import the records. Parse the file content from the message, ask which account to use, then call this tool with the extracted transactions. Maximum 100 transactions per upload.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        account_id: {
+          type: "string",
+          description: "Account UUID or human-readable ID (e.g., ACCT-ABC123) to import transactions into",
+        },
+        transactions: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              type: {
+                type: "string",
+                enum: ["deposit", "withdrawal", "transfer_out", "transfer_in"],
+                description: "Transaction type",
+              },
+              amount: {
+                type: "number",
+                minimum: 0.01,
+                description: "Transaction amount (positive number)",
+              },
+              description: {
+                type: "string",
+                description: "Transaction description/memo",
+              },
+              created_at: {
+                type: "string",
+                description: "Transaction date in ISO format (optional, defaults to now)",
+              },
+            },
+            required: ["type", "amount"],
+          },
+          description: "Array of transaction objects to import",
+        },
+      },
+      required: ["account_id", "transactions"],
+    },
+  },
 ];
 
 // ── Customer System Prompt ───────────────────────────────────────────────────
@@ -464,6 +508,7 @@ export const WRITE_TOOLS = [
   "transfer",
   "update_account_status",
   "seed_test_data",
+  "upload_transactions",
 ];
 
 // Customer-scoped tool subsets
@@ -496,6 +541,7 @@ export const WRITE_TOOL_LABELS: Record<string, string> = {
   transfer: "transfer",
   update_account_status: "account status update",
   seed_test_data: "test data generation",
+  upload_transactions: "transaction upload",
 };
 
 // ── Read Tool Executor ───────────────────────────────────────────────────────
